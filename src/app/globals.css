@@ -156,13 +156,32 @@ body {
 .card {
   background: var(--card);
   border-radius: var(--radius-lg);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--border);
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.04),
+    0 8px 16px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .card-sm {
   background: var(--card);
   border-radius: var(--radius);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* Bottom Navigation Glass Blur */
+.bottom-nav-glass {
+  background: rgba(26, 77, 77, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Nav tab active background */
+.nav-tab-active {
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 /* Animation utilities */
@@ -215,3 +234,92 @@ body {
     background-position: -200% 0;
   }
 }
+
+/* Dialog/Modal styles */
+.dialog-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.dialog-content {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 24rem;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  pointer-events: auto;
+  box-shadow: 
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+/* Upload area */
+.upload-area {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.upload-area:hover {
+  border-color: var(--accent);
+  background: var(--secondary);
+}
+
+.upload-area.has-image {
+  border-style: solid;
+  border-color: var(--accent);
+  padding: 0.5rem;
+}
+
+/* Delete mode checkbox */
+.delete-checkbox {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 10;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.375rem;
+  border: 2px solid white;
+  background: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.delete-checkbox.checked {
+  background: #ef4444;
+  border-color: #ef4444;
+}
+
+.delete-checkbox:hover {
+  transform: scale(1.1);
+}
+
+/* Delete mode card overlay */
+.delete-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(239, 68, 68, 0.1);
+  pointer-events: none;
+  border-radius: var(--radius-lg);
+}
+
