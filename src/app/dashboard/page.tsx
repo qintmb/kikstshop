@@ -691,8 +691,8 @@ export default function HomePage() {
             className="card p-4"
           >
             <p className="text-sm text-amber-700">
-              Isi <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">NEXT_SUPABASE_URL</code> dan{" "}
-              <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">NEXT_SUPABASE_ANON_KEY</code> di file .env.local.
+              Isi <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">NEXT_PUBLIC_SUPABASE_URL</code> dan{" "}
+              <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> di file .env.local.
             </p>
           </motion.div>
         ) : null}
