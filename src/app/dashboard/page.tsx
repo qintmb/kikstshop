@@ -7,7 +7,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, number } from "framer-motion";
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -29,6 +29,8 @@ import {
   Upload,
   ImageIcon,
   Coins,
+  LogOut,
+  History,
 } from "lucide-react";
 import { ImageCropper } from "@/components/ImageCropper";
 import { generateFileName } from "@/lib/imageUtils";
@@ -47,9 +49,9 @@ const LOW_STOCK_THRESHOLD = 5;
 
 const NAV_ITEMS: Array<{ key: TabKey; label: string; title: string; icon: React.ElementType }> = [
   { key: "dashboard", label: "Home", title: "Dashboard", icon: LayoutDashboard },
-  { key: "shop", label: "Shop", title: "Buat Transaksi", icon: ShoppingBag },
-  { key: "stock", label: "Stock", title: "Kelola Stok", icon: Package },
-  { key: "income", label: "Transaction", title: "Riwayat Transaksi", icon: TrendingUp },
+  { key: "shop", label: "Shop", title: "Transaksi", icon: ShoppingBag },
+  { key: "stock", label: "Stock", title: "Stok", icon: Package },
+  { key: "income", label: "Transaction", title: "History", icon: TrendingUp },
   { key: "account", label: "Account", title: "Akun Saya", icon: User },
 ];
 
@@ -110,6 +112,15 @@ export default function HomePage() {
   const [newItemImageBlob, setNewItemImageBlob] = useState<Blob | null>(null);
   const [newItemImagePreview, setNewItemImagePreview] = useState<string | null>(null);
   const [submittingNewItem, setSubmittingNewItem] = useState(false);
+
+  // Expense Form States
+  const [expenseDate, setExpenseDate] = useState(nowLocalInput());
+  const [expenseItem, setExpenseItem] = useState("");
+  const [expensePrice, setExpensePrice] = useState("");
+  const [expenseQty, setExpenseQty] = useState(1);
+  const [expenseOtherCost, setExpenseOtherCost] = useState("");
+  const [expenseNote, setExpenseNote] = useState("");
+  const [submittingExpense, setSubmittingExpense] = useState(false);
 
   // Image cropper states
   const [showCropper, setShowCropper] = useState(false);
@@ -263,6 +274,15 @@ export default function HomePage() {
     });
   }, [sales, fromDate, toDate]);
 
+  const filteredExpenses = useMemo(() => {
+    const start = new Date(`${fromDate}T00:00:00`);
+    const end = new Date(`${toDate}T23:59:59`);
+    return expenses.filter((expense) => {
+      const boughtDate = new Date(expense.bought_at);
+      return boughtDate >= start && boughtDate <= end;
+    });
+  }, [expenses, fromDate, toDate]);
+
   const handleSubmitSale = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -308,6 +328,66 @@ export default function HomePage() {
     setShowSuccessPopup(true);
     setTimeout(() => setShowSuccessPopup(false), 2500);
     
+    await loadAll();
+  };
+
+  const handleSubmitExpense = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!hasSupabaseEnv) {
+      setError("Supabase environment variables not configured.");
+      return;
+    }
+
+    const price = Number(expensePrice);
+    const qtyVal = Number(expenseQty);
+    const otherCost = Number(expenseOtherCost) || 0;
+
+    if (!expenseItem.trim()) {
+      setError("Item pembelian harus diisi.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      setError("Harga tidak valid.");
+      return;
+    }
+    if (!Number.isFinite(qtyVal) || qtyVal <= 0) {
+      setError("Qty harus lebih dari 0.");
+      return;
+    }
+
+    const totalCost = price * qtyVal + otherCost;
+
+    setSubmittingExpense(true);
+    setError(null);
+
+    const description = `${expenseItem.trim()} (Qty: ${qtyVal})${expenseNote ? ` - ${expenseNote}` : ""}`;
+
+    const { error: insertError } = await supabase.from("expenses").insert({
+      bought_at: new Date(expenseDate).toISOString(),
+      description,
+      total_cost: totalCost,
+    });
+
+    setSubmittingExpense(false);
+
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
+    // Reset form
+    setExpenseItem("");
+    setExpensePrice("");
+    setExpenseQty(1);
+    setExpenseOtherCost("");
+    setExpenseNote("");
+    setExpenseDate(nowLocalInput());
+
+    // Show success popup
+    setShowSuccessPopup(true);
+    setTimeout(() => setShowSuccessPopup(false), 2500);
+
     await loadAll();
   };
 
@@ -575,6 +655,20 @@ export default function HomePage() {
     doc.save(`income-${fromDate}-to-${toDate}.pdf`);
   };
 
+  const recentTransactions = useMemo(() => {
+    const combined = [
+      ...sales.map((s) => ({ ...s, type: "sale" as const })),
+      ...expenses.map((e) => ({ ...e, type: "expense" as const })),
+    ];
+    return combined
+      .sort((a, b) => {
+        const dateA = new Date(a.type === "sale" ? a.sold_at : a.bought_at).getTime();
+        const dateB = new Date(b.type === "sale" ? b.sold_at : b.bought_at).getTime();
+        return dateB - dateA;
+      })
+      .slice(0, 5);
+  }, [sales, expenses]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -626,7 +720,7 @@ export default function HomePage() {
               transition={{ duration: 0.2, ease: "easeOut" }}
             >
               {activeTab === "dashboard" ? (
-                <DashboardSection metrics={metrics} chartData={chartData} lowStockItems={lowStockItems} />
+                <DashboardSection metrics={metrics} chartData={chartData} recentTransactions={recentTransactions} />
               ) : null}
 
               {activeTab === "shop" ? (
@@ -644,6 +738,21 @@ export default function HomePage() {
                   saleTotal={saleTotal}
                   submitting={submittingSale}
                   onSubmit={handleSubmitSale}
+                  // Expense props
+                  expenseDate={expenseDate}
+                  setExpenseDate={setExpenseDate}
+                  expenseItem={expenseItem}
+                  setExpenseItem={setExpenseItem}
+                  expensePrice={expensePrice}
+                  setExpensePrice={setExpensePrice}
+                  expenseQty={expenseQty}
+                  setExpenseQty={setExpenseQty}
+                  expenseOtherCost={expenseOtherCost}
+                  setExpenseOtherCost={setExpenseOtherCost}
+                  expenseNote={expenseNote}
+                  setExpenseNote={setExpenseNote}
+                  submittingExpense={submittingExpense}
+                  onSubmitExpense={handleSubmitExpense}
                 />
               ) : null}
 
@@ -673,6 +782,7 @@ export default function HomePage() {
               {activeTab === "income" ? (
                 <IncomeSection
                   sales={filteredSales}
+                  expenses={filteredExpenses}
                   fromDate={fromDate}
                   toDate={toDate}
                   setFromDate={setFromDate}
@@ -691,7 +801,7 @@ export default function HomePage() {
       {/* Bottom Navigation */}
       <nav className="fixed inset-x-0 bottom-0 z-30 pb-safe">
         <div className="mx-auto max-w-md px-4 pb-3">
-          <div className="bottom-nav-glass flex items-center justify-around rounded-2xl p-1.5 shadow-xl shadow-black/20">
+          <div className="bottom-nav-glass grid grid-cols-5 items-center justify-around rounded-2xl p-1.5 shadow-xl shadow-black/20">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.key;
@@ -1020,7 +1130,17 @@ function LoadingState() {
   );
 }
 
-function DashboardSection({ metrics, chartData, lowStockItems }: { metrics: DashboardMetrics; chartData: ChartRow[]; lowStockItems: StockItem[] }) {
+type Transaction = (Sale & { type: "sale" }) | (Expense & { type: "expense" });
+
+function DashboardSection({
+  metrics,
+  chartData,
+  recentTransactions = [],
+}: {
+  metrics: DashboardMetrics;
+  chartData: ChartRow[];
+  recentTransactions?: Transaction[];
+}) {
   return (
     <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
       {/* Promo Banner */}
@@ -1078,22 +1198,56 @@ function DashboardSection({ metrics, chartData, lowStockItems }: { metrics: Dash
         </div>
       </motion.div>
 
-      {/* Low Stock Alert */}
+      {/* Recent Transactions */}
       <motion.div variants={fadeInUp} className="card p-4">
         <div className="mb-3 flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-          <p className="text-sm font-semibold text-foreground">Stok Menipis</p>
+          <History className="h-4 w-4 text-primary" />
+          <p className="text-sm font-semibold text-foreground">Riwayat Transaksi Terakhir</p>
         </div>
-        {lowStockItems.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Semua stok masih aman.</p>
+        {recentTransactions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Belum ada transaksi.</p>
         ) : (
-          <ul className="space-y-2">
-            {lowStockItems.slice(0, 5).map((item) => (
-              <li key={item.id} className="flex items-center justify-between rounded-xl bg-muted px-3 py-2 text-sm">
-                <span className="font-medium text-foreground">{item.name}</span>
-                <span className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-600">{item.stock}</span>
-              </li>
-            ))}
+          <ul className="space-y-3">
+            {recentTransactions.map((transaction) => {
+              const isSale = transaction.type === "sale";
+              return (
+                <li key={`${transaction.type}-${transaction.id}`} className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                        isSale ? "bg-secondary text-primary" : "bg-red-100 text-red-600"
+                      }`}
+                    >
+                      {isSale ? <ShoppingBag className="h-4 w-4" /> : <LogOut className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {isSale ? transaction.item_name : transaction.description}
+                      </p>
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <span>
+                          {format(new Date(isSale ? transaction.sold_at : transaction.bought_at), "dd MMM, HH:mm")}
+                        </span>
+                        {isSale && transaction.buyer_name && (
+                          <>
+                            <span>•</span>
+                            <span>{transaction.buyer_name}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    className={`text-sm font-semibold ${
+                      isSale ? "text-foreground" : "text-red-600"
+                    }`}
+                  >
+                    {isSale ? "+ " : "- "}
+                    {currency(isSale ? transaction.total_price : transaction.total_cost)}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </motion.div>
@@ -1115,6 +1269,21 @@ function ShopSection({
   saleTotal,
   submitting,
   onSubmit,
+  // Expense props
+  expenseDate,
+  setExpenseDate,
+  expenseItem,
+  setExpenseItem,
+  expensePrice,
+  setExpensePrice,
+  expenseQty,
+  setExpenseQty,
+  expenseOtherCost,
+  setExpenseOtherCost,
+  expenseNote,
+  setExpenseNote,
+  submittingExpense,
+  onSubmitExpense,
 }: {
   stockItems: StockItem[];
   selectedStockId: number | null;
@@ -1129,86 +1298,215 @@ function ShopSection({
   saleTotal: number;
   submitting: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  // Expense props
+  expenseDate: string;
+  setExpenseDate: (value: string) => void;
+  expenseItem: string;
+  setExpenseItem: (value: string) => void;
+  expensePrice: string;
+  setExpensePrice: (value: string) => void;
+  expenseQty: number;
+  setExpenseQty: (value: number) => void;
+  expenseOtherCost: string;
+  setExpenseOtherCost: (value: string) => void;
+  expenseNote: string;
+  setExpenseNote: (value: string) => void;
+  submittingExpense: boolean;
+  onSubmitExpense: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
 }) {
+  const [activeMode, setActiveMode] = useState<"sale" | "expense">("sale");
+
+  const expenseTotal = (Number(expensePrice) || 0) * (expenseQty || 0) + (Number(expenseOtherCost) || 0);
+
   return (
     <motion.section variants={staggerContainer} initial="initial" animate="animate">
       <motion.div variants={fadeInUp} className="card p-4">
-        <h2 className="mb-4 text-base font-semibold text-foreground">Buat Transaksi</h2>
-        <form className="space-y-3" onSubmit={onSubmit}>
-          <InputWrap label="Tanggal transaksi">
-            <input
-              type="datetime-local"
-              value={soldAt}
-              onChange={(event) => setSoldAt(event.target.value)}
-              className="input-base"
-              required
-            />
-          </InputWrap>
+        <div className="mb-4 flex items-center gap-2 rounded-lg bg-muted p-1">
+          <button
+            onClick={() => setActiveMode("sale")}
+            className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
+              activeMode === "sale" ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Penjualan
+          </button>
+          <button
+            onClick={() => setActiveMode("expense")}
+            className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
+              activeMode === "expense" ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Pengeluaran
+          </button>
+        </div>
 
-          <InputWrap label="Pilih Item">
-            <select
-              className="input-base"
-              value={selectedStockId ?? ""}
-              onChange={(event) => setSelectedStockId(Number(event.target.value))}
-              required
-            >
-              {stockItems.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} (stok {item.stock})
-                </option>
-              ))}
-            </select>
-          </InputWrap>
-
-          <div className="grid grid-cols-2 gap-3">
-            <InputWrap label="Harga">
-              <input value={selectedItem ? currency(selectedItem.price) : "-"} readOnly className="input-base bg-muted" />
-            </InputWrap>
-
-            <InputWrap label="Qty">
+        {activeMode === "sale" ? (
+          <form className="space-y-3" onSubmit={onSubmit}>
+            <InputWrap label="Tanggal Transaksi">
               <input
-                type="number"
-                min={1}
-                value={qty}
-                onChange={(event) => setQty(Number(event.target.value))}
+                type="datetime-local"
+                value={soldAt}
+                onChange={(event) => setSoldAt(event.target.value)}
                 className="input-base"
                 required
               />
             </InputWrap>
-          </div>
 
-          <InputWrap label="Total Harga">
-            <input value={currency(saleTotal)} readOnly className="input-base bg-muted text-lg font-semibold text-primary" />
-          </InputWrap>
+            <InputWrap label="Pilih Item">
+              <select
+                className="input-base"
+                value={selectedStockId ?? ""}
+                onChange={(event) => setSelectedStockId(Number(event.target.value))}
+                required
+              >
+                {stockItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} (stok {item.stock})
+                  </option>
+                ))}
+              </select>
+            </InputWrap>
 
-          <InputWrap label="Nama pembeli (opsional)">
-            <input
-              type="text"
-              value={buyerName}
-              onChange={(event) => setBuyerName(event.target.value)}
-              className="input-base"
-              placeholder="Nama pembeli"
-            />
-          </InputWrap>
+            <div className="grid grid-cols-2 gap-3">
+              <InputWrap label="Harga">
+                <input value={selectedItem ? currency(selectedItem.price) : "-"} readOnly className="input-base bg-muted" />
+              </InputWrap>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="btn-primary mt-2"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Menyimpan...
-              </>
-            ) : (
-              <>
-                <ShoppingBag className="h-4 w-4" />
-                Submit Transaksi
-              </>
-            )}
-          </button>
-        </form>
+              <InputWrap label="Qty">
+                <input
+                  type="number"
+                  min={1}
+                  value={qty}
+                  onChange={(event) => setQty(Number(event.target.value))}
+                  className="input-base"
+                  required
+                />
+              </InputWrap>
+            </div>
+
+            <InputWrap label="Total Harga">
+              <input value={currency(saleTotal)} readOnly className="input-base bg-muted text-lg font-semibold text-primary" />
+            </InputWrap>
+
+            <InputWrap label="Nama pembeli (opsional)">
+              <input
+                type="text"
+                value={buyerName}
+                onChange={(event) => setBuyerName(event.target.value)}
+                className="input-base"
+                placeholder="Nama pembeli"
+              />
+            </InputWrap>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn-primary mt-2"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Menyimpan...
+                </>
+              ) : (
+                <>
+                  <ShoppingBag className="h-4 w-4" />
+                  Submit Transaksi
+                </>
+              )}
+            </button>
+          </form>
+        ) : (
+          <form className="space-y-3" onSubmit={onSubmitExpense}>
+            <InputWrap label="Tanggal Transaksi">
+              <input
+                type="datetime-local"
+                value={expenseDate}
+                onChange={(event) => setExpenseDate(event.target.value)}
+                className="input-base"
+                required
+              />
+            </InputWrap>
+
+            <InputWrap label="Item Pembelian">
+              <input
+                type="text"
+                value={expenseItem}
+                onChange={(event) => setExpenseItem(event.target.value)}
+                className="input-base"
+                placeholder="Deskripsi pengeluaran/pembelian"
+                required
+              />
+            </InputWrap>
+
+            <div className="grid grid-cols-2 gap-3">
+              <InputWrap label="Harga">
+                <input
+                  type="number"
+                  value={expensePrice}
+                  onChange={(event) => setExpensePrice(event.target.value)}
+                  className="input-base"
+                  placeholder="0"
+                  min={0}
+                  required
+                />
+              </InputWrap>
+
+              <InputWrap label="Qty">
+                <input
+                  type="number"
+                  min={1}
+                  value={expenseQty}
+                  onChange={(event) => setExpenseQty(Number(event.target.value))}
+                  className="input-base"
+                  required
+                />
+              </InputWrap>
+            </div>
+
+            <InputWrap label="Biaya Lain (Ongkir, dll)">
+              <input
+                type="number"
+                value={expenseOtherCost}
+                onChange={(event) => setExpenseOtherCost(event.target.value)}
+                className="input-base"
+                placeholder="0"
+                min={0}
+              />
+            </InputWrap>
+
+            <InputWrap label="Total">
+              <input value={currency(expenseTotal)} readOnly className="input-base bg-muted text-lg font-semibold text-red-600" />
+            </InputWrap>
+
+            <InputWrap label="Keterangan (Opsional)">
+              <textarea
+                value={expenseNote}
+                onChange={(event) => setExpenseNote(event.target.value)}
+                className="input-base h-20 resize-none"
+                placeholder="Catatan tambahan..."
+              />
+            </InputWrap>
+
+            <button
+              type="submit"
+              disabled={submittingExpense || !expenseItem || !expensePrice || Number(expensePrice) < 0}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition active:scale-[0.98] disabled:opacity-70"
+            >
+              {submittingExpense ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Menyimpan...
+                </>
+              ) : (
+                <>
+                  <ShoppingBag className="h-4 w-4" />
+                  Submit Pengeluaran
+                </>
+              )}
+            </button>
+          </form>
+        )}
       </motion.div>
     </motion.section>
   );
@@ -1338,7 +1636,7 @@ function StockSection({
                   <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${
                     item.stock <= LOW_STOCK_THRESHOLD
                       ? "bg-red-100 text-red-600"
-                      : "bg-green-100 text-green-600"
+                      : "bg-sky-100 text-sky-600"
                   }`}>
                     Stok: {item.stock}
                   </span>
@@ -1492,6 +1790,7 @@ function StockSection({
 
 function IncomeSection({
   sales,
+  expenses,
   fromDate,
   toDate,
   setFromDate,
@@ -1500,6 +1799,7 @@ function IncomeSection({
   onExportExcel,
 }: {
   sales: Sale[];
+  expenses: Expense[];
   fromDate: string;
   toDate: string;
   setFromDate: (date: string) => void;
@@ -1507,6 +1807,30 @@ function IncomeSection({
   onExportPdf: () => void;
   onExportExcel: () => void;
 }) {
+  const transactions = useMemo(() => {
+    const combined = [
+      ...sales.map((s) => ({
+        type: "sale" as const,
+        id: `sale-${s.id}`,
+        date: s.sold_at,
+        name: s.item_name,
+        qty: s.qty,
+        amount: s.total_price,
+        detail: s.buyer_name,
+      })),
+      ...expenses.map((e) => ({
+        type: "expense" as const,
+        id: `expense-${e.id}`,
+        date: e.bought_at,
+        name: e.description ?? "Pengeluaran",
+        qty: null,
+        amount: e.total_cost,
+        detail: null,
+      })),
+    ];
+    return combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [sales, expenses]);
+
   return (
     <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-3">
       <motion.div variants={fadeInUp} className="card p-3">
@@ -1542,7 +1866,7 @@ function IncomeSection({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {sales.map((item, index) => (
+              {transactions.map((item, index) => (
                 <motion.tr
                   key={item.id}
                   initial={{ opacity: 0 }}
@@ -1550,25 +1874,29 @@ function IncomeSection({
                   transition={{ delay: index * 0.02 }}
                 >
                   <td className="px-2 py-2">
-                    <div className="font-medium text-foreground">{item.item_name}</div>
+                    <div className="font-medium text-foreground">{item.name}</div>
                     <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <span>{format(new Date(item.sold_at), "dd/MM HH:mm")}</span>
-                      {item.buyer_name && (
+                      <span className={item.type === "expense" ? "text-red-500/70" : ""}>
+                        {format(new Date(item.date), "dd/MM HH:mm")}
+                      </span>
+                      {item.detail && (
                         <>
                           <span>•</span>
                           <span className="flex items-center gap-0.5">
                             <User className="h-2.5 w-2.5" />
-                            {item.buyer_name}
+                            {item.detail}
                           </span>
                         </>
                       )}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-center text-muted-foreground">{item.qty}</td>
-                  <td className="px-2 py-2 text-right font-medium text-primary">{currency(item.total_price)}</td>
+                  <td className="px-2 py-2 text-center text-muted-foreground">{item.qty ?? "-"}</td>
+                  <td className={`px-2 py-2 text-right font-medium ${item.type === "expense" ? "text-red-600" : "text-primary"}`}>
+                    {currency(item.amount)}
+                  </td>
                 </motion.tr>
               ))}
-              {sales.length === 0 && (
+              {transactions.length === 0 && (
                 <tr>
                   <td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">
                     Belum ada transaksi di rentang tanggal ini.
@@ -1583,7 +1911,19 @@ function IncomeSection({
   );
 }
 
+import { useRouter } from "next/navigation";
+
 function AccountSection() {
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    await supabase.auth.signOut();
+    router.replace("/login");
+  };
+
+
   return (
     <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
       <motion.div variants={fadeInUp} className="card p-4">
@@ -1604,6 +1944,21 @@ function AccountSection() {
           Halaman account disiapkan untuk fase berikutnya (auth, profil toko, dan preferensi aplikasi).
         </p>
       </motion.div>
+
+      <motion.div variants={fadeInUp} className="card p-1">
+        <button
+          onClick={handleLogout}
+          disabled={loggingOut}
+          className="flex w-full items-center justify-center gap-2 rounded-lg p-3 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+        >
+          {loggingOut ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <LogOut className="h-4 w-4" />
+          )}
+          {loggingOut ? "Keluar..." : "Keluar"}
+        </button>
+      </motion.div>
     </motion.section>
   );
 }
@@ -1612,7 +1967,7 @@ function MetricCard({ label, value, highlight, accent }: { label: string; value:
   return (
     <article className={`card p-3 ${accent ? "bg-secondary" : ""}`}>
       <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`mt-0.5 text-base font-semibold ${highlight ? "text-green-600" : accent ? "text-primary" : "text-foreground"}`}>
+      <p className={`mt-0.5 text-base font-semibold ${highlight ? "text-sky-600" : accent ? "text-primary" : "text-foreground"}`}>
         {value}
       </p>
     </article>
