@@ -809,7 +809,12 @@ export default function HomePage() {
               transition={{ duration: 0.2, ease: "easeOut" }}
             >
               {activeTab === "dashboard" ? (
-                <DashboardSection metrics={metrics} chartData={chartData} recentTransactions={recentTransactions} />
+                <DashboardSection
+                  metrics={metrics}
+                  chartData={chartData}
+                  recentTransactions={recentTransactions}
+                  onViewDetail={() => setActiveTab("income")}
+                />
               ) : null}
 
               {activeTab === "shop" ? (
@@ -896,6 +901,17 @@ export default function HomePage() {
                       .eq("id", id);
                     if (updateError) {
                       setError(updateError.message);
+                      return;
+                    }
+                    await loadAll();
+                  }}
+                  onDeleteSale={async (id: number) => {
+                    const { error: deleteError } = await supabase
+                      .from("sales")
+                      .delete()
+                      .eq("id", id);
+                    if (deleteError) {
+                      setError(deleteError.message);
                       return;
                     }
                     await loadAll();
@@ -1247,10 +1263,12 @@ function DashboardSection({
   metrics,
   chartData,
   recentTransactions = [],
+  onViewDetail,
 }: {
   metrics: DashboardMetrics;
   chartData: ChartRow[];
   recentTransactions?: Transaction[];
+  onViewDetail: () => void;
 }) {
   return (
     <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
@@ -1262,7 +1280,10 @@ function DashboardSection({
         <div className="relative z-10">
           <p className="text-xs font-medium text-primary-foreground/80">Total Profit</p>
           <p className="mt-1 text-2xl font-bold text-primary-foreground">{currency(metrics.profit)}</p>
-          <button className="mt-3 flex items-center gap-1 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/30">
+          <button
+            onClick={onViewDetail}
+            className="mt-3 flex items-center gap-1 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/30"
+          >
             Lihat Detail <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -1955,6 +1976,7 @@ function IncomeSection({
   onExportPdf,
   onExportExcel,
   onUpdateSale,
+  onDeleteSale,
 }: {
   sales: Sale[];
   expenses: Expense[];
@@ -1966,6 +1988,7 @@ function IncomeSection({
   onExportPdf: () => void;
   onExportExcel: () => void;
   onUpdateSale: (id: number, data: { qty?: number; buyer_name?: string | null; status?: "lunas" | "belum_bayar" }) => Promise<void>;
+  onDeleteSale: (id: number) => Promise<void>;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "lunas" | "belum_bayar">("all");
@@ -1975,6 +1998,8 @@ function IncomeSection({
   const [editBuyer, setEditBuyer] = useState("");
   const [editStatus, setEditStatus] = useState<"lunas" | "belum_bayar">("lunas");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDeleteSale, setConfirmDeleteSale] = useState(false);
 
   const transactions = useMemo(() => {
     const combined = [
@@ -2064,6 +2089,20 @@ function IncomeSection({
     return item?.image_url ?? null;
   };
 
+  const handleDelete = async () => {
+    if (!selectedSale) return;
+    if (!confirmDeleteSale) {
+      setConfirmDeleteSale(true);
+      return;
+    }
+    setDeleting(true);
+    await onDeleteSale(selectedSale.id);
+    setDeleting(false);
+    setConfirmDeleteSale(false);
+    setSelectedSale(null);
+    setIsEditing(false);
+  };
+
   const filterButtons: { key: "all" | "lunas" | "belum_bayar"; label: string }[] = [
     { key: "all", label: "Semua" },
     { key: "lunas", label: "Lunas" },
@@ -2095,7 +2134,7 @@ function IncomeSection({
 
         {/* Search */}
         <div className="relative mt-3">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             placeholder="Cari item atau pembeli..."
@@ -2341,16 +2380,54 @@ function IncomeSection({
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex gap-2 pt-1">
-                  {!isEditing ? (
-                    <button
-                      type="button"
-                      onClick={startEditing}
-                      className="btn-primary w-full py-2.5 text-xs"
+                <div className="space-y-2 pt-1">
+                  {confirmDeleteSale && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-xl bg-red-50 p-3 text-center"
                     >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Edit
-                    </button>
+                      <p className="text-xs font-medium text-red-700">Yakin hapus transaksi ini?</p>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteSale(false)}
+                          className="btn-secondary flex-1 py-2 text-xs"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDelete}
+                          disabled={deleting}
+                          className="flex-1 rounded-xl bg-red-500 py-2 text-xs font-semibold text-white transition hover:bg-red-600 disabled:opacity-50"
+                        >
+                          {deleting ? "Menghapus..." : "Ya, Hapus"}
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                  <div className="flex gap-2">
+                  {!isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={startEditing}
+                        className="btn-primary flex-1 py-2.5 text-xs"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDelete}
+                        disabled={deleting}
+                        className="flex aspect-square h-full items-center justify-center rounded-xl bg-red-500 text-white transition hover:bg-red-600 disabled:opacity-50"
+                        style={{ minWidth: '40px' }}
+                      >
+                        {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      </button>
+                    </>
                   ) : (
                     <>
                       <button
@@ -2371,6 +2448,7 @@ function IncomeSection({
                       </button>
                     </>
                   )}
+                  </div>
                 </div>
               </div>
             </motion.div>
