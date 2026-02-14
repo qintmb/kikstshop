@@ -11,6 +11,7 @@ import { motion, AnimatePresence, number } from "framer-motion";
 import {
   LayoutDashboard,
   ShoppingBag,
+  ShoppingCart,
   Package,
   TrendingUp,
   User,
@@ -31,6 +32,9 @@ import {
   Coins,
   LogOut,
   History,
+  Wallet,
+  ArrowDownLeft,
+  Clock,
 } from "lucide-react";
 import { ImageCropper } from "@/components/ImageCropper";
 import { generateFileName } from "@/lib/imageUtils";
@@ -928,7 +932,7 @@ export default function HomePage() {
       {/* Bottom Navigation */}
       <nav className="fixed inset-x-0 bottom-0 z-30 pb-safe">
         <div className="mx-auto max-w-md px-4 pb-3">
-          <div className="bottom-nav-glass grid grid-cols-5 items-center justify-around rounded-2xl p-1.5 shadow-xl shadow-black/20">
+          <div className="bottom-nav-glass grid grid-cols-5 items-center justify-around rounded-2xl p-1.5 shadow-xl shadow-black/20 backdrop-blur-xs">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.key;
@@ -1275,11 +1279,11 @@ function DashboardSection({
       {/* Promo Banner */}
       <motion.div
         variants={fadeInUp}
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary to-accent p-4"
+        className="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary to-accent p-4"
       >
         <div className="relative z-10">
           <p className="text-xs font-medium text-primary-foreground/80">Total Profit</p>
-          <p className="mt-1 text-2xl font-bold text-primary-foreground">{currency(metrics.profit)}</p>
+          <p className="mt-1 text-3xl font-bold text-primary-foreground">{currency(metrics.profit)}</p>
           <button
             onClick={onViewDetail}
             className="mt-3 flex items-center gap-1 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/30"
@@ -1292,11 +1296,11 @@ function DashboardSection({
       </motion.div>
 
       {/* Metrics Grid */}
-      <motion.div variants={fadeInUp} className="grid grid-cols-2 gap-3">
-        <MetricCard label="Total Penjualan" value={metrics.totalSales.toLocaleString("id-ID")} />
-        <MetricCard label="Pendapatan" value={currency(metrics.totalRevenue)} accent />
-        <MetricCard label="Pengeluaran" value={currency(metrics.totalExpenses)} />
-        <MetricCard label="Piutang" value={currency(metrics.piutang)} highlight={metrics.piutang > 0} />
+      <motion.div variants={fadeInUp} className="grid grid-cols-2 gap-2">
+        <MetricCard label="Total Penjualan" value={metrics.totalSales.toLocaleString("id-ID")} variant="sales" icon={ShoppingCart} />
+        <MetricCard label="Pendapatan" value={currency(metrics.totalRevenue)} variant="revenue" icon={Wallet} />
+        <MetricCard label="Pengeluaran" value={currency(metrics.totalExpenses)} variant="expense" icon={ArrowDownLeft} />
+        <MetricCard label="Piutang" value={currency(metrics.piutang)} variant="piutang" icon={Clock} highlight={metrics.piutang > 0} />
       </motion.div>
 
       {/* Sales Chart */}
@@ -1313,7 +1317,7 @@ function DashboardSection({
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" vertical={false} />
               <XAxis dataKey="day" tick={{ fill: "#6b7280", fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={(value) => `${Math.round(value / 1000)}k`} tick={{ fill: "#6b7280", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={(value) => `${Math.round(value / 1000)}k`} tick={{ fill: "#6b7280", fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
               <Tooltip
                 formatter={(value: number | undefined) => currency(value ?? 0)}
                 contentStyle={{
@@ -2511,13 +2515,46 @@ function AccountSection() {
   );
 }
 
-function MetricCard({ label, value, highlight, accent }: { label: string; value: string; highlight?: boolean; accent?: boolean }) {
+function MetricCard({
+  label,
+  value,
+  highlight,
+  variant = "default",
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  variant?: "sales" | "revenue" | "expense" | "piutang" | "default";
+  icon?: React.ElementType;
+}) {
+  const gradients: Record<string, string> = {
+    sales: "from-teal-500 to-teal-700",
+    revenue: "from-emerald-500 to-emerald-700",
+    expense: "from-rose-400 to-rose-600",
+    piutang: "from-amber-400 to-amber-600",
+    default: "from-gray-400 to-gray-600",
+  };
+
   return (
-    <article className={`card p-3 ${accent ? "bg-secondary" : ""}`}>
-      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`mt-0.5 text-base font-semibold ${highlight ? "text-sky-600" : accent ? "text-primary" : "text-foreground"}`}>
-        {value}
-      </p>
+    <article className={`relative overflow-hidden rounded-xl bg-gradient-to-br ${gradients[variant]} p-3.5 shadow-lg transition-transform hover:scale-[1.02]`}>
+      {/* Decorative circles */}
+      <div className="absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
+      <div className="absolute -bottom-4 -right-4 h-20 w-20 rounded-full bg-white/5" />
+
+      <div className="relative z-10">
+        <div className="flex items-center gap-2">
+          {Icon && (
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20">
+              <Icon className="h-3.5 w-3.5 text-white" />
+            </div>
+          )}
+          <p className="text-[10px] font-medium uppercase tracking-wide text-white/80">{label}</p>
+        </div>
+        <p className="mt-1.5 text-lg font-bold text-white">
+          {value}
+        </p>
+      </div>
     </article>
   );
 }
