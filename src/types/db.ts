@@ -16,6 +16,7 @@ export type Sale = {
   qty: number;
   total_price: number;
   buyer_name: string | null;
+  status: "lunas" | "belum_bayar";
 };
 
 export type Expense = {
@@ -30,4 +31,5 @@ export type DashboardMetrics = {
   totalRevenue: number;
   totalExpenses: number;
   profit: number;
+  piutang: number;
 };

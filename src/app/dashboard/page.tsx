@@ -94,6 +94,7 @@ export default function HomePage() {
   const [qty, setQty] = useState(1);
   const [buyerName, setBuyerName] = useState("");
   const [soldAt, setSoldAt] = useState(nowLocalInput());
+  const [saleStatus, setSaleStatus] = useState<"lunas" | "belum_bayar">("lunas");
   const [submittingSale, setSubmittingSale] = useState(false);
 
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
@@ -154,7 +155,7 @@ export default function HomePage() {
         .order("created_at", { ascending: false }),
       supabase
         .from("sales")
-        .select("id,sold_at,stock_item_id,item_name,unit_price,qty,total_price,buyer_name")
+        .select("id,sold_at,stock_item_id,item_name,unit_price,qty,total_price,buyer_name,status")
         .order("sold_at", { ascending: false }),
       supabase
         .from("expenses")
@@ -218,11 +219,15 @@ export default function HomePage() {
     const totalSales = sales.length;
     const totalRevenue = sales.reduce((acc, item) => acc + item.total_price, 0);
     const totalExpenses = expenses.reduce((acc, item) => acc + item.total_cost, 0);
+    const piutang = sales
+      .filter((s) => s.status === "belum_bayar")
+      .reduce((acc, item) => acc + item.total_price, 0);
     return {
       totalSales,
       totalRevenue,
       totalExpenses,
       profit: totalRevenue - totalExpenses,
+      piutang,
     };
   }, [sales, expenses]);
 
@@ -311,6 +316,7 @@ export default function HomePage() {
       p_qty: qty,
       p_buyer_name: buyerName.trim() || null,
       p_sold_at: new Date(soldAt).toISOString(),
+      p_status: saleStatus,
     });
 
     setSubmittingSale(false);
@@ -323,6 +329,7 @@ export default function HomePage() {
     setQty(1);
     setBuyerName("");
     setSoldAt(nowLocalInput());
+    setSaleStatus("lunas");
     
     // Show success popup
     setShowSuccessPopup(true);
@@ -613,29 +620,96 @@ export default function HomePage() {
 
 
   const exportExcel = () => {
-    const rows = filteredSales.map((item) => ({
-      Tanggal: format(new Date(item.sold_at), "dd/MM/yyyy HH:mm"),
-      "Nama Barang": item.item_name,
-      Qty: item.qty,
-      Harga: item.unit_price,
-      Total: item.total_price,
-      Pembeli: item.buyer_name ?? "-",
-    }));
+    const totalRevenue = filteredSales.reduce((a, s) => a + s.total_price, 0);
+    const totalExpense = filteredExpenses.reduce((a, e) => a + e.total_cost, 0);
+    const pendapatan = totalRevenue - totalExpense;
+    const now = format(new Date(), "dd/MM/yyyy HH:mm");
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    // Build rows manually for structured header layout
+    const wsData: (string | number | null)[][] = [
+      ["LAPORAN PENGADAAN & PENJUALAN SOUVENIR"],
+      ["SEKSI EKONOMI"],
+      [],
+      ["Dari Tanggal", `: ${fromDate}`, null, null, null, "Tanggal Cetak", `: ${now}`],
+      ["Sampai Tanggal", `: ${toDate}`],
+      [],
+      ["Total Penjualan", `: ${filteredSales.length} Transaksi`, null, null, null, "Pengeluaran", `: ${currency(totalExpense)}`],
+      ["Penjualan", `: ${currency(totalRevenue)}`],
+      ["Pendapatan", `: ${currency(pendapatan)}`],
+      [],
+      ["Tanggal", "Nama Barang", "Qty", "Harga", "Total", "Pembeli", "Status"],
+    ];
+
+    filteredSales.forEach((item) => {
+      wsData.push([
+        format(new Date(item.sold_at), "dd/MM/yyyy HH:mm"),
+        item.item_name,
+        item.qty,
+        item.unit_price,
+        item.total_price,
+        item.buyer_name ?? "-",
+        item.status === "lunas" ? "Lunas" : "Belum Bayar",
+      ]);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Column widths
+    worksheet["!cols"] = [
+      { wch: 20 }, // A - Tanggal
+      { wch: 28 }, // B - Nama Barang
+      { wch: 6 },  // C - Qty
+      { wch: 14 }, // D - Harga
+      { wch: 14 }, // E - Total
+      { wch: 18 }, // F - Pembeli
+      { wch: 18 }, // G - Status
+    ];
+
+    // Merge title cells
+    worksheet["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }, // Row 1 title
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } }, // Row 2 subtitle
+    ];
+
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Income");
-    XLSX.writeFile(workbook, `income-${fromDate}-to-${toDate}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan");
+    XLSX.writeFile(workbook, `laporan-${fromDate}-to-${toDate}.xlsx`);
   };
 
   const exportPdf = () => {
     const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-    doc.setFontSize(14);
-    doc.text(`Income Report ${fromDate} - ${toDate}`, 40, 40);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const totalRevenue = filteredSales.reduce((a, s) => a + s.total_price, 0);
+    const totalExpense = filteredExpenses.reduce((a, e) => a + e.total_cost, 0);
+    const pendapatan = totalRevenue - totalExpense;
+    const now = format(new Date(), "dd/MM/yyyy HH:mm");
 
+    // Title
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("LAPORAN PENGADAAN & PENJUALAN SOUVENIR", pageWidth / 2, 36, { align: "center" });
+    doc.setFontSize(12);
+    doc.text("SEKSI EKONOMI", pageWidth / 2, 52, { align: "center" });
+
+    // Left info block
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    const infoY = 76;
+    doc.text(`Dari Tanggal       : ${fromDate}`, 40, infoY);
+    doc.text(`Sampai Tanggal  : ${toDate}`, 40, infoY + 14);
+
+    doc.text(`Total Penjualan  : ${filteredSales.length} Transaksi`, 40, infoY + 36);
+    doc.text(`Penjualan            : ${currency(totalRevenue)}`, 40, infoY + 50);
+    doc.text(`Pendapatan         : ${currency(pendapatan)}`, 40, infoY + 64);
+
+    // Right info block
+    doc.text(`Tanggal Cetak : ${now}`, pageWidth - 200, infoY);
+    doc.text(`Pengeluaran    : ${currency(totalExpense)}`, pageWidth - 200, infoY + 36);
+
+    // Table
     autoTable(doc, {
-      startY: 60,
-      head: [["Tanggal", "Barang", "Qty", "Harga", "Total", "Pembeli"]],
+      startY: infoY + 84,
+      head: [["Tanggal", "Nama Barang", "Qty", "Harga", "Total", "Pembeli", "Status"]],
       body: filteredSales.map((item) => [
         format(new Date(item.sold_at), "dd/MM/yyyy HH:mm"),
         item.item_name,
@@ -643,16 +717,31 @@ export default function HomePage() {
         currency(item.unit_price),
         currency(item.total_price),
         item.buyer_name ?? "-",
+        item.status === "lunas" ? "Lunas" : "Belum Bayar",
       ]),
       styles: {
-        fontSize: 9,
+        fontSize: 8.5,
+        font: "helvetica",
+        cellPadding: 4,
       },
       headStyles: {
-        fillColor: [26, 77, 77],
+        fillColor: [80, 80, 80],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 9,
+      },
+      alternateRowStyles: {
+        fillColor: [245, 245, 245],
+      },
+      columnStyles: {
+        0: { cellWidth: 110 },
+        2: { halign: "center", cellWidth: 40 },
+        3: { halign: "right", cellWidth: 80 },
+        4: { halign: "right", cellWidth: 80 },
       },
     });
 
-    doc.save(`income-${fromDate}-to-${toDate}.pdf`);
+    doc.save(`laporan-${fromDate}-to-${toDate}.pdf`);
   };
 
   const recentTransactions = useMemo(() => {
@@ -738,6 +827,8 @@ export default function HomePage() {
                   saleTotal={saleTotal}
                   submitting={submittingSale}
                   onSubmit={handleSubmitSale}
+                  saleStatus={saleStatus}
+                  setSaleStatus={setSaleStatus}
                   // Expense props
                   expenseDate={expenseDate}
                   setExpenseDate={setExpenseDate}
@@ -783,12 +874,32 @@ export default function HomePage() {
                 <IncomeSection
                   sales={filteredSales}
                   expenses={filteredExpenses}
+                  stockItems={stockItems}
                   fromDate={fromDate}
                   toDate={toDate}
                   setFromDate={setFromDate}
                   setToDate={setToDate}
                   onExportPdf={exportPdf}
                   onExportExcel={exportExcel}
+                  onUpdateSale={async (id: number, data: { qty?: number; buyer_name?: string | null; status?: "lunas" | "belum_bayar" }) => {
+                    // Recalculate total_price if qty changed
+                    const updateData: Record<string, unknown> = { ...data };
+                    if (data.qty !== undefined) {
+                      const sale = filteredSales.find((s) => s.id === id);
+                      if (sale) {
+                        updateData.total_price = sale.unit_price * data.qty;
+                      }
+                    }
+                    const { error: updateError } = await supabase
+                      .from("sales")
+                      .update(updateData)
+                      .eq("id", id);
+                    if (updateError) {
+                      setError(updateError.message);
+                      return;
+                    }
+                    await loadAll();
+                  }}
                 />
               ) : null}
 
@@ -1149,7 +1260,7 @@ function DashboardSection({
         className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary to-accent p-4"
       >
         <div className="relative z-10">
-          <p className="text-xs font-medium text-primary-foreground/80">Total Profit Bulan Ini</p>
+          <p className="text-xs font-medium text-primary-foreground/80">Total Profit</p>
           <p className="mt-1 text-2xl font-bold text-primary-foreground">{currency(metrics.profit)}</p>
           <button className="mt-3 flex items-center gap-1 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/30">
             Lihat Detail <ChevronRight className="h-3.5 w-3.5" />
@@ -1164,7 +1275,7 @@ function DashboardSection({
         <MetricCard label="Total Penjualan" value={metrics.totalSales.toLocaleString("id-ID")} />
         <MetricCard label="Pendapatan" value={currency(metrics.totalRevenue)} accent />
         <MetricCard label="Pengeluaran" value={currency(metrics.totalExpenses)} />
-        <MetricCard label="Profit" value={currency(metrics.profit)} highlight={metrics.profit >= 0} />
+        <MetricCard label="Piutang" value={currency(metrics.piutang)} highlight={metrics.piutang > 0} />
       </motion.div>
 
       {/* Sales Chart */}
@@ -1234,6 +1345,20 @@ function DashboardSection({
                             <span>{transaction.buyer_name}</span>
                           </>
                         )}
+                        {isSale && (
+                          <>
+                            <span>•</span>
+                            <span
+                              className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${
+                                transaction.status === "lunas"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-orange-100 text-orange-700"
+                              }`}
+                            >
+                              {transaction.status === "lunas" ? "Lunas" : "Belum Bayar"}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1269,6 +1394,8 @@ function ShopSection({
   saleTotal,
   submitting,
   onSubmit,
+  saleStatus,
+  setSaleStatus,
   // Expense props
   expenseDate,
   setExpenseDate,
@@ -1298,6 +1425,8 @@ function ShopSection({
   saleTotal: number;
   submitting: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  saleStatus: "lunas" | "belum_bayar";
+  setSaleStatus: (status: "lunas" | "belum_bayar") => void;
   // Expense props
   expenseDate: string;
   setExpenseDate: (value: string) => void;
@@ -1396,6 +1525,33 @@ function ShopSection({
                 className="input-base"
                 placeholder="Nama pembeli"
               />
+            </InputWrap>
+
+            <InputWrap label="Status Pembayaran">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSaleStatus("lunas")}
+                  className={`flex-1 rounded-lg py-2.5 text-xs font-semibold transition-all ${
+                    saleStatus === "lunas"
+                      ? "bg-emerald-500 text-white shadow-sm ring-2 ring-emerald-500/30"
+                      : "bg-muted text-muted-foreground hover:bg-emerald-50"
+                  }`}
+                >
+                  ✓ Lunas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSaleStatus("belum_bayar")}
+                  className={`flex-1 rounded-lg py-2.5 text-xs font-semibold transition-all ${
+                    saleStatus === "belum_bayar"
+                      ? "bg-orange-500 text-white shadow-sm ring-2 ring-orange-500/30"
+                      : "bg-muted text-muted-foreground hover:bg-orange-50"
+                  }`}
+                >
+                  Belum Bayar
+                </button>
+              </div>
             </InputWrap>
 
             <button
@@ -1791,45 +1947,128 @@ function StockSection({
 function IncomeSection({
   sales,
   expenses,
+  stockItems,
   fromDate,
   toDate,
   setFromDate,
   setToDate,
   onExportPdf,
   onExportExcel,
+  onUpdateSale,
 }: {
   sales: Sale[];
   expenses: Expense[];
+  stockItems: StockItem[];
   fromDate: string;
   toDate: string;
   setFromDate: (date: string) => void;
   setToDate: (date: string) => void;
   onExportPdf: () => void;
   onExportExcel: () => void;
+  onUpdateSale: (id: number, data: { qty?: number; buyer_name?: string | null; status?: "lunas" | "belum_bayar" }) => Promise<void>;
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "lunas" | "belum_bayar">("all");
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editQty, setEditQty] = useState(0);
+  const [editBuyer, setEditBuyer] = useState("");
+  const [editStatus, setEditStatus] = useState<"lunas" | "belum_bayar">("lunas");
+  const [saving, setSaving] = useState(false);
+
   const transactions = useMemo(() => {
     const combined = [
       ...sales.map((s) => ({
         type: "sale" as const,
         id: `sale-${s.id}`,
+        numericId: s.id,
         date: s.sold_at,
         name: s.item_name,
         qty: s.qty,
         amount: s.total_price,
+        unitPrice: s.unit_price,
         detail: s.buyer_name,
+        status: s.status,
+        stockItemId: s.stock_item_id,
       })),
       ...expenses.map((e) => ({
         type: "expense" as const,
         id: `expense-${e.id}`,
+        numericId: e.id,
         date: e.bought_at,
         name: e.description ?? "Pengeluaran",
-        qty: null,
+        qty: null as number | null,
         amount: e.total_cost,
-        detail: null,
+        unitPrice: null as number | null,
+        detail: null as string | null,
+        status: null as string | null,
+        stockItemId: null as number | null,
       })),
     ];
     return combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [sales, expenses]);
+
+  const filteredTransactions = useMemo(() => {
+    let result = transactions;
+
+    // Filter by status
+    if (statusFilter !== "all") {
+      result = result.filter((t) => t.status === statusFilter);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (t) =>
+          t.name.toLowerCase().includes(q) ||
+          (t.detail && t.detail.toLowerCase().includes(q))
+      );
+    }
+
+    return result;
+  }, [transactions, statusFilter, searchQuery]);
+
+  const openDetail = (item: (typeof transactions)[0]) => {
+    if (item.type !== "sale") return;
+    const sale = sales.find((s) => s.id === item.numericId);
+    if (!sale) return;
+    setSelectedSale(sale);
+    setIsEditing(false);
+  };
+
+  const startEditing = () => {
+    if (!selectedSale) return;
+    setEditQty(selectedSale.qty);
+    setEditBuyer(selectedSale.buyer_name ?? "");
+    setEditStatus(selectedSale.status);
+    setIsEditing(true);
+  };
+
+  const handleSave = async () => {
+    if (!selectedSale) return;
+    setSaving(true);
+    await onUpdateSale(selectedSale.id, {
+      qty: editQty,
+      buyer_name: editBuyer.trim() || null,
+      status: editStatus,
+    });
+    setSaving(false);
+    setSelectedSale(null);
+    setIsEditing(false);
+  };
+
+  const getItemImage = (stockItemId: number | null) => {
+    if (!stockItemId) return null;
+    const item = stockItems.find((si) => si.id === stockItemId);
+    return item?.image_url ?? null;
+  };
+
+  const filterButtons: { key: "all" | "lunas" | "belum_bayar"; label: string }[] = [
+    { key: "all", label: "Semua" },
+    { key: "lunas", label: "Lunas" },
+    { key: "belum_bayar", label: "Belum Bayar" },
+  ];
 
   return (
     <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-3">
@@ -1853,6 +2092,40 @@ function IncomeSection({
             Excel
           </button>
         </div>
+
+        {/* Search */}
+        <div className="relative mt-3">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Cari item atau pembeli..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="input-base w-full py-2 pl-8 pr-3 text-xs"
+          />
+        </div>
+
+        {/* Status Filter */}
+        <div className="mt-2 flex gap-1.5">
+          {filterButtons.map((fb) => (
+            <button
+              key={fb.key}
+              type="button"
+              onClick={() => setStatusFilter(fb.key)}
+              className={`rounded-full px-3 py-1 text-[10px] font-semibold transition ${
+                statusFilter === fb.key
+                  ? fb.key === "lunas"
+                    ? "bg-emerald-600 text-white"
+                    : fb.key === "belum_bayar"
+                      ? "bg-orange-500 text-white"
+                      : "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              {fb.label}
+            </button>
+          ))}
+        </div>
       </motion.div>
 
       <motion.div variants={fadeInUp} className="card overflow-hidden">
@@ -1866,12 +2139,14 @@ function IncomeSection({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {transactions.map((item, index) => (
+              {filteredTransactions.map((item, index) => (
                 <motion.tr
                   key={item.id}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: index * 0.02 }}
+                  className={item.type === "sale" ? "cursor-pointer transition hover:bg-muted/40" : ""}
+                  onClick={() => openDetail(item)}
                 >
                   <td className="px-2 py-2">
                     <div className="font-medium text-foreground">{item.name}</div>
@@ -1888,6 +2163,20 @@ function IncomeSection({
                           </span>
                         </>
                       )}
+                      {item.status && (
+                        <>
+                          <span>•</span>
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${
+                              item.status === "lunas"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-orange-100 text-orange-700"
+                            }`}
+                          >
+                            {item.status === "lunas" ? "Lunas" : "Belum Bayar"}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </td>
                   <td className="px-2 py-2 text-center text-muted-foreground">{item.qty ?? "-"}</td>
@@ -1896,7 +2185,7 @@ function IncomeSection({
                   </td>
                 </motion.tr>
               ))}
-              {transactions.length === 0 && (
+              {filteredTransactions.length === 0 && (
                 <tr>
                   <td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">
                     Belum ada transaksi di rentang tanggal ini.
@@ -1907,6 +2196,187 @@ function IncomeSection({
           </table>
         </div>
       </motion.div>
+
+      {/* Transaction Detail Dialog */}
+      <AnimatePresence>
+        {selectedSale && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            onClick={() => { setSelectedSale(null); setIsEditing(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="w-full max-w-sm overflow-hidden rounded-2xl bg-background shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Image Header */}
+              <div className="relative h-40 w-full bg-muted">
+                {getItemImage(selectedSale.stock_item_id) ? (
+                  <Image
+                    src={getItemImage(selectedSale.stock_item_id)!}
+                    alt={selectedSale.item_name}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <ImageIcon className="h-12 w-12 text-muted-foreground/40" />
+                  </div>
+                )}
+                <button
+                  onClick={() => { setSelectedSale(null); setIsEditing(false); }}
+                  className="absolute right-2 top-2 rounded-full bg-black/40 p-1.5 text-white transition hover:bg-black/60"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Detail Content */}
+              <div className="space-y-3 p-4">
+                <h3 className="text-base font-semibold text-foreground">{selectedSale.item_name}</h3>
+
+                {!isEditing ? (
+                  /* View Mode */
+                  <div className="space-y-2.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tanggal</span>
+                      <span className="font-medium">{format(new Date(selectedSale.sold_at), "dd MMM yyyy, HH:mm")}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Qty</span>
+                      <span className="font-medium">{selectedSale.qty}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Harga Satuan</span>
+                      <span className="font-medium">{currency(selectedSale.unit_price)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Harga</span>
+                      <span className="font-semibold text-primary">{currency(selectedSale.total_price)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Pembeli</span>
+                      <span className="font-medium">{selectedSale.buyer_name || "-"}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Status</span>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                          selectedSale.status === "lunas"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-orange-100 text-orange-700"
+                        }`}
+                      >
+                        {selectedSale.status === "lunas" ? "Lunas" : "Belum Bayar"}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  /* Edit Mode */
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Tanggal</span>
+                      <span className="font-medium">{format(new Date(selectedSale.sold_at), "dd MMM yyyy, HH:mm")}</span>
+                    </div>
+                    <InputWrap label="Qty">
+                      <input
+                        type="number"
+                        min={1}
+                        value={editQty}
+                        onChange={(e) => setEditQty(Number(e.target.value))}
+                        className="input-base w-full py-2 text-xs"
+                      />
+                    </InputWrap>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Harga Satuan</span>
+                      <span className="font-medium">{currency(selectedSale.unit_price)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Total Harga</span>
+                      <span className="font-semibold text-primary">{currency(selectedSale.unit_price * editQty)}</span>
+                    </div>
+                    <InputWrap label="Nama Pembeli">
+                      <input
+                        type="text"
+                        value={editBuyer}
+                        onChange={(e) => setEditBuyer(e.target.value)}
+                        className="input-base w-full py-2 text-xs"
+                        placeholder="Nama pembeli..."
+                      />
+                    </InputWrap>
+                    <InputWrap label="Status Pembayaran">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditStatus("lunas")}
+                          className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+                            editStatus === "lunas"
+                              ? "bg-emerald-600 text-white"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          }`}
+                        >
+                          Lunas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditStatus("belum_bayar")}
+                          className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+                            editStatus === "belum_bayar"
+                              ? "bg-orange-500 text-white"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          }`}
+                        >
+                          Belum Bayar
+                        </button>
+                      </div>
+                    </InputWrap>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 pt-1">
+                  {!isEditing ? (
+                    <button
+                      type="button"
+                      onClick={startEditing}
+                      className="btn-primary w-full py-2.5 text-xs"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditing(false)}
+                        className="btn-secondary flex-1 py-2.5 text-xs"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="btn-primary flex-1 py-2.5 text-xs"
+                      >
+                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        {saving ? "Menyimpan..." : "Simpan"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.section>
   );
 }

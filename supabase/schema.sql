@@ -64,6 +64,7 @@ create table if not exists public.sales (
   qty integer not null check (qty > 0),
   total_price numeric(14, 2) not null,
   buyer_name text,
+  status text not null default 'lunas' check (status in ('lunas', 'belum_bayar')),
   created_at timestamptz not null default now()
 );
 
@@ -79,7 +80,8 @@ create or replace function public.create_sale(
   p_stock_item_id bigint,
   p_qty integer,
   p_buyer_name text default null,
-  p_sold_at timestamptz default now()
+  p_sold_at timestamptz default now(),
+  p_status text default 'lunas'
 )
 returns public.sales
 language plpgsql
@@ -122,7 +124,8 @@ begin
     unit_price,
     qty,
     total_price,
-    buyer_name
+    buyer_name,
+    status
   )
   values (
     p_sold_at,
@@ -131,7 +134,8 @@ begin
     item_row.price,
     p_qty,
     total,
-    nullif(trim(p_buyer_name), '')
+    nullif(trim(p_buyer_name), ''),
+    coalesce(p_status, 'lunas')
   )
   returning * into inserted_sale;
 
@@ -168,7 +172,7 @@ to anon, authenticated
 using (true)
 with check (true);
 
-grant execute on function public.create_sale(bigint, integer, text, timestamptz) to anon, authenticated;
+grant execute on function public.create_sale(bigint, integer, text, timestamptz, text) to anon, authenticated;
 
 -- Optional sample data
 insert into public.stock_items (name, price, stock, image_url)

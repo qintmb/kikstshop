@@ -70,12 +70,6 @@ export default function LoginPage() {
 
         {/* Form Card */}
         <div className="card p-6">
-          {!hasSupabaseEnv && (
-            <div className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
-              Database belum dikonfigurasi.
-            </div>
-          )}
-
           {error && (
             <motion.div
               initial={{ opacity: 0, y: -8 }}
