@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { format, parseISO, startOfDay, subDays } from "date-fns";
+import { format, parseISO, startOfDay, startOfWeek, startOfMonth, startOfYear, subDays } from "date-fns";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -149,6 +149,41 @@ export default function HomePage() {
   const currentTab = NAV_ITEMS.find((item) => item.key === activeTab);
 
 
+  // Helper to ensure hidden system item exists for Modal entries
+  const getSystemModalId = async (): Promise<number | null> => {
+    if (!hasSupabaseEnv) return null;
+    
+    const SYSTEM_NAME = "SYSTEM_MODAL_DONOTDELETE";
+    
+    // Check if exists
+    const { data: existing } = await supabase
+      .from("stock_items")
+      .select("id")
+      .eq("name", SYSTEM_NAME)
+      .single();
+      
+    if (existing) return existing.id;
+    
+    // Create if missing
+    const { data: created, error } = await supabase
+      .from("stock_items")
+      .insert({
+        name: SYSTEM_NAME,
+        stock: 0,
+        price: 0,
+        image_url: null
+      })
+      .select("id")
+      .single();
+      
+    if (error) {
+      console.error("Failed to create system modal item:", error);
+      return null;
+    }
+    
+    return created.id;
+  };
+
   const loadAll = useCallback(async () => {
     if (!hasSupabaseEnv) {
       setLoading(false);
@@ -178,11 +213,13 @@ export default function HomePage() {
       return;
     }
 
-    const parsedStock = (stockRes.data ?? []).map((item) => ({
-      ...item,
-      price: toNumber(item.price),
-      stock: toNumber(item.stock),
-    })) as StockItem[];
+    const parsedStock = (stockRes.data ?? [])
+      .map((item) => ({
+        ...item,
+        price: toNumber(item.price),
+        stock: toNumber(item.stock),
+      }))
+      .filter((item) => item.name !== "SYSTEM_MODAL_DONOTDELETE") as StockItem[];
 
     const parsedSales = (salesRes.data ?? []).map((item) => ({
       ...item,
@@ -424,6 +461,13 @@ export default function HomePage() {
     setSubmittingModal(true);
     setError(null);
 
+    const modalStockId = await getSystemModalId();
+    if (modalStockId === null) {
+      setError("Gagal inisialisasi system item. Cek koneksi Supabase.");
+      setSubmittingModal(false);
+      return;
+    }
+
     const { error: insertError } = await supabase.from("sales").insert({
       sold_at: new Date(modalDate).toISOString(),
       item_name: "Modal / Dana Awal",
@@ -431,7 +475,7 @@ export default function HomePage() {
       qty: 1,
       total_price: amount,
       status: "lunas",
-      stock_item_id: null,
+      stock_item_id: modalStockId,
     });
 
     setSubmittingModal(false);
@@ -699,7 +743,11 @@ export default function HomePage() {
 
 
   const exportExcel = () => {
-    const totalRevenue = filteredSales.reduce((a, s) => a + s.total_price, 0);
+    const modalSales = filteredSales.filter((s) => s.item_name === "Modal / Dana Awal");
+    const actualSales = filteredSales.filter((s) => s.item_name !== "Modal / Dana Awal");
+
+    const totalRevenue = actualSales.reduce((a, s) => a + s.total_price, 0);
+    const totalModal = modalSales.reduce((a, s) => a + s.total_price, 0);
     const totalExpense = filteredExpenses.reduce((a, e) => a + e.total_cost, 0);
     const pendapatan = totalRevenue - totalExpense;
     const now = format(new Date(), "dd/MM/yyyy HH:mm");
@@ -712,9 +760,9 @@ export default function HomePage() {
       ["Dari Tanggal", `: ${fromDate}`, null, null, null, "Tanggal Cetak", `: ${now}`],
       ["Sampai Tanggal", `: ${toDate}`],
       [],
-      ["Total Penjualan", `: ${filteredSales.length} Transaksi`, null, null, null, "Pengeluaran", `: ${currency(totalExpense)}`],
+      ["Total Penjualan", `: ${actualSales.length} Transaksi`, null, null, null, "Pengeluaran", `: ${currency(totalExpense)}`],
       ["Penjualan", `: ${currency(totalRevenue)}`],
-      ["Pendapatan", `: ${currency(pendapatan)}`],
+      ["Total Modal", `: ${currency(totalModal)}`, null, null, null, "Pendapatan Bersih", `: ${currency(pendapatan)}`],
       [],
       ["Tanggal", "Nama Barang", "Qty", "Harga", "Total", "Pembeli", "Status"],
     ];
@@ -758,7 +806,12 @@ export default function HomePage() {
   const exportPdf = () => {
     const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
-    const totalRevenue = filteredSales.reduce((a, s) => a + s.total_price, 0);
+
+    const modalSales = filteredSales.filter((s) => s.item_name === "Modal / Dana Awal");
+    const actualSales = filteredSales.filter((s) => s.item_name !== "Modal / Dana Awal");
+
+    const totalRevenue = actualSales.reduce((a, s) => a + s.total_price, 0);
+    const totalModal = modalSales.reduce((a, s) => a + s.total_price, 0);
     const totalExpense = filteredExpenses.reduce((a, e) => a + e.total_cost, 0);
     const pendapatan = totalRevenue - totalExpense;
     const now = format(new Date(), "dd/MM/yyyy HH:mm");
@@ -777,9 +830,10 @@ export default function HomePage() {
     doc.text(`Dari Tanggal       : ${fromDate}`, 40, infoY);
     doc.text(`Sampai Tanggal  : ${toDate}`, 40, infoY + 14);
 
-    doc.text(`Total Penjualan  : ${filteredSales.length} Transaksi`, 40, infoY + 36);
+    doc.text(`Total Penjualan  : ${actualSales.length} Transaksi`, 40, infoY + 36);
     doc.text(`Penjualan            : ${currency(totalRevenue)}`, 40, infoY + 50);
-    doc.text(`Pendapatan         : ${currency(pendapatan)}`, 40, infoY + 64);
+    doc.text(`Total Modal         : ${currency(totalModal)}`, 40, infoY + 64);
+    doc.text(`Pendapatan Bersih: ${currency(pendapatan)}`, 40, infoY + 78);
 
     // Right info block
     doc.text(`Tanggal Cetak : ${now}`, pageWidth - 200, infoY);
@@ -889,7 +943,8 @@ export default function HomePage() {
             >
               {activeTab === "dashboard" ? (
                 <DashboardSection
-                  metrics={metrics}
+                  sales={sales}
+                  expenses={expenses}
                   chartData={chartData}
                   recentTransactions={recentTransactions}
                   onViewDetail={() => setActiveTab("income")}
@@ -1346,17 +1401,59 @@ function LoadingState() {
 
 type Transaction = (Sale & { type: "sale" }) | (Expense & { type: "expense" });
 
+type DashFilter = "all" | "weekly" | "monthly" | "yearly";
+const DASH_FILTERS: { key: DashFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+  { key: "yearly", label: "Yearly" },
+];
+
 function DashboardSection({
-  metrics,
+  sales,
+  expenses,
   chartData,
   recentTransactions = [],
   onViewDetail,
 }: {
-  metrics: DashboardMetrics;
+  sales: Sale[];
+  expenses: Expense[];
   chartData: ChartRow[];
   recentTransactions?: Transaction[];
   onViewDetail: () => void;
 }) {
+  const [dashFilter, setDashFilter] = useState<DashFilter>("all");
+
+  const metrics: DashboardMetrics = useMemo(() => {
+    const now = new Date();
+    let cutoff: Date | null = null;
+
+    if (dashFilter === "weekly") cutoff = startOfWeek(now, { weekStartsOn: 1 });
+    else if (dashFilter === "monthly") cutoff = startOfMonth(now);
+    else if (dashFilter === "yearly") cutoff = startOfYear(now);
+
+    const fSales = cutoff
+      ? sales.filter((s) => new Date(s.sold_at) >= cutoff!)
+      : sales;
+    const fExpenses = cutoff
+      ? expenses.filter((e) => new Date(e.bought_at) >= cutoff!)
+      : expenses;
+
+    const totalSales = fSales.length;
+    const totalRevenue = fSales.reduce((acc, item) => acc + item.total_price, 0);
+    const totalExpenses = fExpenses.reduce((acc, item) => acc + item.total_cost, 0);
+    const piutang = fSales
+      .filter((s) => s.status === "belum_bayar")
+      .reduce((acc, item) => acc + item.total_price, 0);
+    return {
+      totalSales,
+      totalRevenue,
+      totalExpenses,
+      profit: totalRevenue - totalExpenses,
+      piutang,
+    };
+  }, [sales, expenses, dashFilter]);
+
   return (
     <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
       {/* Promo Banner */}
@@ -1376,6 +1473,24 @@ function DashboardSection({
         </div>
         <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
         <div className="absolute -bottom-6 -right-6 h-32 w-32 rounded-full bg-white/5" />
+      </motion.div>
+
+      {/* Time Filter Buttons */}
+      <motion.div variants={fadeInUp} className="flex gap-1.5">
+        {DASH_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setDashFilter(f.key)}
+            className={`flex-1 rounded-lg border px-2 py-1.5 text-[10px] font-semibold tracking-wide uppercase transition-all duration-200 backdrop-blur-sm ${
+              dashFilter === f.key
+                ? "border-gray-700 bg-gray-800/90 text-white shadow-lg shadow-gray-900/20"
+                : "border-gray-300 bg-gray-100/60 text-gray-600 hover:bg-gray-200/80"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </motion.div>
 
       {/* Metrics Grid */}
@@ -2395,9 +2510,9 @@ function IncomeSection({
                   onClick={() => openDetail(item)}
                 >
                   <td className="px-2 py-2">
-                    <div className="font-medium text-foreground">{item.name}</div>
+                    <div className={`font-medium ${item.name === "Modal / Dana Awal" ? "text-orange-600" : "text-foreground"}`}>{item.name}</div>
                     <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <span className={item.type === "expense" ? "text-red-500/70" : ""}>
+                      <span className={item.type === "expense" ? "text-red-500/70" : item.name === "Modal / Dana Awal" ? "text-orange-500/70" : ""}>
                         {format(new Date(item.date), "dd/MM HH:mm")}
                       </span>
                       {item.detail && (
@@ -2426,7 +2541,13 @@ function IncomeSection({
                     </div>
                   </td>
                   <td className="px-2 py-2 text-center text-muted-foreground">{item.qty ?? "-"}</td>
-                  <td className={`px-2 py-2 text-right font-medium ${item.type === "expense" ? "text-red-600" : "text-primary"}`}>
+                  <td className={`px-2 py-2 text-right font-medium ${
+                    item.type === "expense" 
+                      ? "text-red-600" 
+                      : item.name === "Modal / Dana Awal" 
+                        ? "text-orange-600" 
+                        : "text-primary"
+                  }`}>
                     {currency(item.amount)}
                   </td>
                 </motion.tr>
