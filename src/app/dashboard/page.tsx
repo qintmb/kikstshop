@@ -127,6 +127,11 @@ export default function HomePage() {
   const [expenseNote, setExpenseNote] = useState("");
   const [submittingExpense, setSubmittingExpense] = useState(false);
 
+  // Modal Input States
+  const [modalDate, setModalDate] = useState(nowLocalInput());
+  const [modalAmount, setModalAmount] = useState("");
+  const [submittingModal, setSubmittingModal] = useState(false);
+
   // Image cropper states
   const [showCropper, setShowCropper] = useState(false);
   const [cropperImageSrc, setCropperImageSrc] = useState<string | null>(null);
@@ -402,6 +407,76 @@ export default function HomePage() {
     await loadAll();
   };
 
+  const handleSubmitModal = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!hasSupabaseEnv) {
+      setError("Supabase environment variables not configured.");
+      return;
+    }
+
+    const amount = Number(modalAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Jumlah modal harus lebih dari 0.");
+      return;
+    }
+
+    setSubmittingModal(true);
+    setError(null);
+
+    const { error: insertError } = await supabase.from("sales").insert({
+      sold_at: new Date(modalDate).toISOString(),
+      item_name: "Modal / Dana Awal",
+      unit_price: amount,
+      qty: 1,
+      total_price: amount,
+      status: "lunas",
+      stock_item_id: null,
+    });
+
+    setSubmittingModal(false);
+
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
+    setModalAmount("");
+    setModalDate(nowLocalInput());
+    setShowSuccessPopup(true);
+    setTimeout(() => setShowSuccessPopup(false), 2500);
+
+    await loadAll();
+  };
+
+  const handleUpdateExpense = async (id: number, data: { description: string; total_cost: number; bought_at: string }) => {
+    if (!hasSupabaseEnv) {
+      setError("Supabase environment variables not configured.");
+      return;
+    }
+
+    const { error: updateError } = await supabase.from("expenses").update(data).eq("id", id);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    await loadAll();
+  };
+
+  const handleDeleteExpense = async (id: number) => {
+    if (!hasSupabaseEnv) {
+      setError("Supabase environment variables not configured.");
+      return;
+    }
+
+    const { error: deleteError } = await supabase.from("expenses").delete().eq("id", id);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    await loadAll();
+  };
+
   const handlePriceSave = async (id: number) => {
     const nextPrice = Number(priceInput);
     if (!Number.isFinite(nextPrice) || nextPrice < 0) {
@@ -421,9 +496,9 @@ export default function HomePage() {
   };
 
   const handleAddStock = async (id: number) => {
-    const extra = Number(addStockInput);
-    if (!Number.isFinite(extra) || extra <= 0) {
-      setError("Jumlah stok tambahan harus lebih dari 0.");
+    const nextStock = Number(addStockInput);
+    if (!Number.isFinite(nextStock) || nextStock < 0) {
+      setError("Jumlah stok tidak valid (minimal 0).");
       return;
     }
 
@@ -435,7 +510,7 @@ export default function HomePage() {
 
     const { error: updateError } = await supabase
       .from("stock_items")
-      .update({ stock: item.stock + extra })
+      .update({ stock: nextStock })
       .eq("id", id);
 
     if (updateError) {
@@ -853,6 +928,12 @@ export default function HomePage() {
                   setExpenseNote={setExpenseNote}
                   submittingExpense={submittingExpense}
                   onSubmitExpense={handleSubmitExpense}
+                  modalDate={modalDate}
+                  setModalDate={setModalDate}
+                  modalAmount={modalAmount}
+                  setModalAmount={setModalAmount}
+                  submittingModal={submittingModal}
+                  onSubmitModal={handleSubmitModal}
                 />
               ) : null}
 
@@ -920,6 +1001,8 @@ export default function HomePage() {
                     }
                     await loadAll();
                   }}
+                  onUpdateExpense={handleUpdateExpense}
+                  onDeleteExpense={handleDeleteExpense}
                 />
               ) : null}
 
@@ -1436,6 +1519,13 @@ function ShopSection({
   setExpenseNote,
   submittingExpense,
   onSubmitExpense,
+  // Modal props
+  modalDate,
+  setModalDate,
+  modalAmount,
+  setModalAmount,
+  submittingModal,
+  onSubmitModal,
 }: {
   stockItems: StockItem[];
   selectedStockId: number | null;
@@ -1467,13 +1557,20 @@ function ShopSection({
   setExpenseNote: (value: string) => void;
   submittingExpense: boolean;
   onSubmitExpense: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  // Modal props
+  modalDate: string;
+  setModalDate: (value: string) => void;
+  modalAmount: string;
+  setModalAmount: (value: string) => void;
+  submittingModal: boolean;
+  onSubmitModal: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
 }) {
   const [activeMode, setActiveMode] = useState<"sale" | "expense">("sale");
 
   const expenseTotal = (Number(expensePrice) || 0) * (expenseQty || 0) + (Number(expenseOtherCost) || 0);
 
   return (
-    <motion.section variants={staggerContainer} initial="initial" animate="animate">
+    <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
       <motion.div variants={fadeInUp} className="card p-4">
         <div className="mb-4 flex items-center gap-2 rounded-lg bg-muted p-1">
           <button
@@ -1688,6 +1785,55 @@ function ShopSection({
             </button>
           </form>
         )}
+      </motion.div>
+
+      {/* Modal / Capital Input Card */}
+      <motion.div variants={fadeInUp} className="card p-4 border-l-4 border-l-amber-400 bg-gradient-to-r from-amber-50/50 to-transparent">
+        <div className="mb-3 flex items-center gap-2">
+          <div className="rounded-lg bg-amber-100 p-1.5 text-amber-600">
+            <Wallet className="h-4 w-4" />
+          </div>
+          <h3 className="font-semibold text-amber-900">Input Modal / Dana Awal</h3>
+        </div>
+        <form onSubmit={onSubmitModal} className="space-y-3">
+          <InputWrap label="Tanggal">
+            <input
+              type="datetime-local"
+              value={modalDate}
+              onChange={(e) => setModalDate(e.target.value)}
+              className="input-base border-amber-200 focus:border-amber-400 focus:ring-amber-400/20"
+              required
+            />
+          </InputWrap>
+          <InputWrap label="Jumlah Modal (Rp)">
+            <input
+              type="number"
+              value={modalAmount}
+              onChange={(e) => setModalAmount(e.target.value)}
+              className="input-base border-amber-200 focus:border-amber-400 focus:ring-amber-400/20"
+              placeholder="0"
+              min={1}
+              required
+            />
+          </InputWrap>
+          <button
+            type="submit"
+            disabled={submittingModal}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition hover:bg-amber-600 active:scale-[0.98] disabled:opacity-70"
+          >
+            {submittingModal ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Menyimpan...
+              </>
+            ) : (
+              <>
+                <Check className="h-4 w-4" />
+                Simpan Modal
+              </>
+            )}
+          </button>
+        </form>
       </motion.div>
     </motion.section>
   );
@@ -1918,9 +2064,9 @@ function StockSection({
                             value={addStockInput}
                             onChange={(event) => setAddStockInput(event.target.value)}
                             type="number"
-                            min={1}
+                            min={0}
                             className="input-base flex-1 py-1.5 text-xs"
-                            placeholder="Tambah stok"
+                            placeholder="Atur stok"
                           />
                           <button
                             type="button"
@@ -1981,6 +2127,8 @@ function IncomeSection({
   onExportExcel,
   onUpdateSale,
   onDeleteSale,
+  onUpdateExpense,
+  onDeleteExpense,
 }: {
   sales: Sale[];
   expenses: Expense[];
@@ -1993,9 +2141,13 @@ function IncomeSection({
   onExportExcel: () => void;
   onUpdateSale: (id: number, data: { qty?: number; buyer_name?: string | null; status?: "lunas" | "belum_bayar" }) => Promise<void>;
   onDeleteSale: (id: number) => Promise<void>;
+  onUpdateExpense: (id: number, data: { description: string; total_cost: number; bought_at: string }) => Promise<void>;
+  onDeleteExpense: (id: number) => Promise<void>;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "lunas" | "belum_bayar">("all");
+  
+  // Sale States
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editQty, setEditQty] = useState(0);
@@ -2004,6 +2156,14 @@ function IncomeSection({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteSale, setConfirmDeleteSale] = useState(false);
+
+  // Expense States
+  const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+  const [isEditingExpense, setIsEditingExpense] = useState(false);
+  const [editExpenseDesc, setEditExpenseDesc] = useState("");
+  const [editExpenseCost, setEditExpenseCost] = useState("");
+  const [editExpenseDate, setEditExpenseDate] = useState("");
+  const [confirmDeleteExpense, setConfirmDeleteExpense] = useState(false);
 
   const transactions = useMemo(() => {
     const combined = [
@@ -2059,11 +2219,19 @@ function IncomeSection({
   }, [transactions, statusFilter, searchQuery]);
 
   const openDetail = (item: (typeof transactions)[0]) => {
-    if (item.type !== "sale") return;
-    const sale = sales.find((s) => s.id === item.numericId);
-    if (!sale) return;
-    setSelectedSale(sale);
-    setIsEditing(false);
+    if (item.type === "sale") {
+      const sale = sales.find((s) => s.id === item.numericId);
+      if (!sale) return;
+      setSelectedSale(sale);
+      setIsEditing(false);
+      setConfirmDeleteSale(false);
+    } else if (item.type === "expense") {
+      const expense = expenses.find((e) => e.id === item.numericId);
+      if (!expense) return;
+      setSelectedExpense(expense);
+      setIsEditingExpense(false);
+      setConfirmDeleteExpense(false);
+    }
   };
 
   const startEditing = () => {
@@ -2087,12 +2255,6 @@ function IncomeSection({
     setIsEditing(false);
   };
 
-  const getItemImage = (stockItemId: number | null) => {
-    if (!stockItemId) return null;
-    const item = stockItems.find((si) => si.id === stockItemId);
-    return item?.image_url ?? null;
-  };
-
   const handleDelete = async () => {
     if (!selectedSale) return;
     if (!confirmDeleteSale) {
@@ -2105,6 +2267,47 @@ function IncomeSection({
     setConfirmDeleteSale(false);
     setSelectedSale(null);
     setIsEditing(false);
+  };
+
+  const startEditingExpense = () => {
+    if (!selectedExpense) return;
+    setEditExpenseDesc(selectedExpense.description ?? "");
+    setEditExpenseCost(String(selectedExpense.total_cost));
+    const d = new Date(selectedExpense.bought_at);
+    setEditExpenseDate(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+    setIsEditingExpense(true);
+  };
+
+  const handleSaveExpense = async () => {
+    if (!selectedExpense) return;
+    setSaving(true);
+    await onUpdateExpense(selectedExpense.id, {
+      description: editExpenseDesc,
+      total_cost: Number(editExpenseCost),
+      bought_at: new Date(editExpenseDate).toISOString(),
+    });
+    setSaving(false);
+    setSelectedExpense(null);
+    setIsEditingExpense(false);
+  };
+
+  const handleDeleteExpenseClick = async () => {
+    if (!selectedExpense) return;
+    if (!confirmDeleteExpense) {
+      setConfirmDeleteExpense(true);
+      return;
+    }
+    setDeleting(true);
+    await onDeleteExpense(selectedExpense.id);
+    setDeleting(false);
+    setSelectedExpense(null);
+    setConfirmDeleteExpense(false);
+  };
+
+  const getItemImage = (stockItemId: number | null) => {
+    if (!stockItemId) return null;
+    const item = stockItems.find((si) => si.id === stockItemId);
+    return item?.image_url ?? null;
   };
 
   const filterButtons: { key: "all" | "lunas" | "belum_bayar"; label: string }[] = [
@@ -2188,7 +2391,7 @@ function IncomeSection({
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: index * 0.02 }}
-                  className={item.type === "sale" ? "cursor-pointer transition hover:bg-muted/40" : ""}
+                  className="cursor-pointer transition hover:bg-muted/40"
                   onClick={() => openDetail(item)}
                 >
                   <td className="px-2 py-2">
@@ -2240,7 +2443,7 @@ function IncomeSection({
         </div>
       </motion.div>
 
-      {/* Transaction Detail Dialog */}
+      {/* Transaction Detail Dialog (Sale) */}
       <AnimatePresence>
         {selectedSale && (
           <motion.div
@@ -2452,6 +2655,161 @@ function IncomeSection({
                       </button>
                     </>
                   )}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Expense Detail Dialog (New) */}
+      <AnimatePresence>
+        {selectedExpense && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            onClick={() => { setSelectedExpense(null); setIsEditingExpense(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="w-full max-w-sm overflow-hidden rounded-2xl bg-background shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-red-50 p-4 border-b border-red-100 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-red-700">
+                  <ArrowDownLeft className="h-5 w-5" />
+                  <h3 className="font-semibold">Detail Pengeluaran</h3>
+                </div>
+                <button
+                  onClick={() => { setSelectedExpense(null); setIsEditingExpense(false); }}
+                  className="rounded-full bg-white p-1 text-red-500 shadow-sm transition hover:bg-red-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4 p-4">
+                {!isEditingExpense ? (
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <span className="text-xs text-muted-foreground block mb-1">Deskripsi</span>
+                      <p className="font-medium text-base">{selectedExpense.description || "Pengeluaran"}</p>
+                    </div>
+                    <div className="flex justify-between border-t border-border pt-3">
+                      <span className="text-muted-foreground">Tanggal</span>
+                      <span className="font-medium">{format(new Date(selectedExpense.bought_at), "dd MMM yyyy, HH:mm")}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Biaya</span>
+                      <span className="font-bold text-red-600 text-lg">{currency(selectedExpense.total_cost)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <InputWrap label="Tanggal">
+                      <input
+                        type="datetime-local"
+                        value={editExpenseDate}
+                        onChange={(e) => setEditExpenseDate(e.target.value)}
+                        className="input-base"
+                      />
+                    </InputWrap>
+                    <InputWrap label="Deskripsi">
+                      <input
+                        type="text"
+                        value={editExpenseDesc}
+                        onChange={(e) => setEditExpenseDesc(e.target.value)}
+                        className="input-base"
+                      />
+                    </InputWrap>
+                    <InputWrap label="Total Biaya">
+                      <input
+                        type="number"
+                        min={0}
+                        value={editExpenseCost}
+                        onChange={(e) => setEditExpenseCost(e.target.value)}
+                        className="input-base"
+                      />
+                    </InputWrap>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="pt-2">
+                  {confirmDeleteExpense && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mb-3 rounded-xl bg-red-50 p-3 text-center"
+                    >
+                      <p className="text-xs font-medium text-red-700">Hapus pengeluaran ini?</p>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteExpense(false)}
+                          className="btn-secondary flex-1 py-1.5 text-xs"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteExpenseClick}
+                          disabled={deleting}
+                          className="flex-1 rounded-xl bg-red-500 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600 disabled:opacity-50"
+                        >
+                          {deleting ? "..." : "Ya, Hapus"}
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <div className="flex gap-2">
+                    {!isEditingExpense ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={startEditingExpense}
+                          className="btn-secondary flex-1 py-2.5 text-xs bg-muted hover:bg-muted/80"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteExpenseClick}
+                          disabled={deleting}
+                          className="flex aspect-square h-full items-center justify-center rounded-xl border border-red-200 text-red-500 transition hover:bg-red-50 disabled:opacity-50"
+                          style={{ minWidth: '40px' }}
+                        >
+                          {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingExpense(false)}
+                          className="btn-secondary flex-1 py-2.5 text-xs"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveExpense}
+                          disabled={saving}
+                          className="btn-primary flex-1 py-2.5 text-xs"
+                        >
+                          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                          Simpan
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

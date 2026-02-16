@@ -10,7 +10,7 @@ export type StockItem = {
 export type Sale = {
   id: number;
   sold_at: string;
-  stock_item_id: number;
+  stock_item_id: number | null;
   item_name: string;
   unit_price: number;
   qty: number;
