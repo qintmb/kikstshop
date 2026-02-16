@@ -95,7 +95,7 @@ export default function HomePage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
 
   const [selectedStockId, setSelectedStockId] = useState<number | null>(null);
-  const [qty, setQty] = useState(1);
+  const [qty, setQty] = useState(0);
   const [buyerName, setBuyerName] = useState("");
   const [soldAt, setSoldAt] = useState(nowLocalInput());
   const [saleStatus, setSaleStatus] = useState<"lunas" | "belum_bayar">("lunas");
@@ -122,7 +122,7 @@ export default function HomePage() {
   const [expenseDate, setExpenseDate] = useState(nowLocalInput());
   const [expenseItem, setExpenseItem] = useState("");
   const [expensePrice, setExpensePrice] = useState("");
-  const [expenseQty, setExpenseQty] = useState(1);
+  const [expenseQty, setExpenseQty] = useState(0);
   const [expenseOtherCost, setExpenseOtherCost] = useState("");
   const [expenseNote, setExpenseNote] = useState("");
   const [submittingExpense, setSubmittingExpense] = useState(false);
@@ -263,7 +263,9 @@ export default function HomePage() {
 
   const metrics: DashboardMetrics = useMemo(() => {
     const totalSales = sales.length;
-    const totalRevenue = sales.reduce((acc, item) => acc + item.total_price, 0);
+    const totalRevenue = sales
+      .filter((s) => s.status === "lunas")
+      .reduce((acc, item) => acc + item.total_price, 0);
     const totalExpenses = expenses.reduce((acc, item) => acc + item.total_cost, 0);
     const piutang = sales
       .filter((s) => s.status === "belum_bayar")
@@ -372,7 +374,7 @@ export default function HomePage() {
       return;
     }
 
-    setQty(1);
+    setQty(0);
     setBuyerName("");
     setSoldAt(nowLocalInput());
     setSaleStatus("lunas");
@@ -432,7 +434,7 @@ export default function HomePage() {
     // Reset form
     setExpenseItem("");
     setExpensePrice("");
-    setExpenseQty(1);
+    setExpenseQty(0);
     setExpenseOtherCost("");
     setExpenseNote("");
     setExpenseDate(nowLocalInput());
@@ -1440,7 +1442,9 @@ function DashboardSection({
       : expenses;
 
     const totalSales = fSales.length;
-    const totalRevenue = fSales.reduce((acc, item) => acc + item.total_price, 0);
+    const totalRevenue = fSales
+      .filter((s) => s.status === "lunas")
+      .reduce((acc, item) => acc + item.total_price, 0);
     const totalExpenses = fExpenses.reduce((acc, item) => acc + item.total_cost, 0);
     const piutang = fSales
       .filter((s) => s.status === "belum_bayar")
@@ -1793,7 +1797,7 @@ function ShopSection({
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || qty < 1}
               className="btn-primary mt-2"
             >
               {submitting ? (
@@ -1883,7 +1887,7 @@ function ShopSection({
 
             <button
               type="submit"
-              disabled={submittingExpense || !expenseItem || !expensePrice || Number(expensePrice) < 0}
+              disabled={submittingExpense || !expenseItem || !expensePrice || Number(expensePrice) < 0 || Number(expenseQty) < 1}
               className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition active:scale-[0.98] disabled:opacity-70"
             >
               {submittingExpense ? (
@@ -1934,7 +1938,7 @@ function ShopSection({
           <button
             type="submit"
             disabled={submittingModal}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition hover:bg-amber-600 active:scale-[0.98] disabled:opacity-70"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/80 active:scale-[0.98] disabled:opacity-70"
           >
             {submittingModal ? (
               <>
