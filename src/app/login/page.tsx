@@ -64,7 +64,7 @@ export default function LoginPage() {
           />
           <h1 className="text-2xl font-bold text-foreground">KIKSTSHOP</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {mode === "login" ? "Masuk ke akun Anda" : ""}
+            {mode === "login" ? "Login Admin Page" : ""}
           </p>
         </div>
 

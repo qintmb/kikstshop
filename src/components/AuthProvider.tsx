@@ -64,9 +64,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (loading) return;
 
     const isLoginPage = pathname === "/login";
+    const isPublicPage = pathname === "/login" || pathname === "/store" || pathname === "/";
     const isAuthenticated = !!user;
 
-    if (!isAuthenticated && !isLoginPage) {
+    if (!isAuthenticated && !isPublicPage) {
       router.push("/login");
     } else if (isAuthenticated && isLoginPage) {
       router.push("/dashboard");
@@ -75,7 +76,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
-    router.push("/login");
+    router.push("/store");
   }, [router]);
 
   return (

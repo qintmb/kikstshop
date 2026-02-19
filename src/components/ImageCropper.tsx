@@ -10,9 +10,22 @@ interface ImageCropperProps {
   imageSrc: string;
   onCropComplete: (croppedBlob: Blob) => void;
   onCancel: () => void;
+  /** Default 1 (square). Use 21/11 for promo slides. */
+  cropAspectRatio?: number;
+  /** Output canvas width. Default 800. */
+  outputWidth?: number;
+  /** Output canvas height. Default 800. */
+  outputHeight?: number;
 }
 
-export function ImageCropper({ imageSrc, onCropComplete, onCancel }: ImageCropperProps) {
+export function ImageCropper({
+  imageSrc,
+  onCropComplete,
+  onCancel,
+  cropAspectRatio = 1,
+  outputWidth = 800,
+  outputHeight = 800,
+}: ImageCropperProps) {
   const cropperRef = useRef<ReactCropperElement>(null);
   const [processing, setProcessing] = useState(false);
 
@@ -45,8 +58,8 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel }: ImageCroppe
 
     try {
       const canvas = cropper.getCroppedCanvas({
-        width: 800,
-        height: 800,
+        width: outputWidth,
+        height: outputHeight,
         imageSmoothingEnabled: true,
         imageSmoothingQuality: "high",
       });
@@ -75,7 +88,7 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel }: ImageCroppe
           ref={cropperRef}
           src={imageSrc}
           style={{ height: "100%", width: "100%" }}
-          aspectRatio={1}
+          aspectRatio={cropAspectRatio}
           viewMode={1}
           dragMode="move"
           guides={true}

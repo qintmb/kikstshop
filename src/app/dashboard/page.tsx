@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Image from "next/image";
 import { format, parseISO, startOfDay, startOfWeek, startOfMonth, startOfYear, subDays } from "date-fns";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -2952,15 +2952,89 @@ function AccountSection() {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
 
+  // Promo states
+  const [promoSlides, setPromoSlides] = useState<{ id: number; url: string; timestamp: number }[]>([]);
+  const [loadingPromos, setLoadingPromos] = useState(true);
+  const [uploadingSlot, setUploadingSlot] = useState<number | null>(null);
+
+  // Cropper states
+  const [showCropper, setShowCropper] = useState(false);
+  const [cropperImageSrc, setCropperImageSrc] = useState<string | null>(null);
+  const [activeSlot, setActiveSlot] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    loadPromos();
+  }, []);
+
+  const loadPromos = async () => {
+    if (!hasSupabaseEnv) return;
+    setLoadingPromos(true);
+    const { data } = await supabase.storage.from("promo").list();
+    if (data) {
+      const slides = data
+        .filter((f) => f.name.startsWith("promo_") && f.name.endsWith(".webp"))
+        .map((f) => {
+          const id = parseInt(f.name.split("_")[1]);
+          const { data: publicUrlData } = supabase.storage.from("promo").getPublicUrl(f.name);
+          return { id, url: publicUrlData.publicUrl, timestamp: new Date().getTime() };
+        })
+        .sort((a, b) => a.id - b.id);
+      setPromoSlides(slides);
+    }
+    setLoadingPromos(false);
+  };
+
+  const handleFileSelect = (slotId: number) => {
+    setActiveSlot(slotId);
+    fileInputRef.current?.click();
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropperImageSrc(reader.result as string);
+      setShowCropper(true);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleCropComplete = async (blob: Blob) => {
+    if (!activeSlot) return;
+    setShowCropper(false);
+    setCropperImageSrc(null);
+    setUploadingSlot(activeSlot);
+
+    const fileName = `promo_${activeSlot}.webp`;
+    const { error } = await supabase.storage
+      .from("promo")
+      .upload(fileName, blob, {
+        contentType: "image/webp",
+        upsert: true,
+      });
+
+    if (error) {
+      console.error("Upload failed", error);
+      alert("Upload gagal: " + error.message);
+    } else {
+      await loadPromos();
+    }
+    setUploadingSlot(null);
+    setActiveSlot(null);
+  };
+
   const handleLogout = async () => {
     setLoggingOut(true);
     await supabase.auth.signOut();
-    router.replace("/login");
+    router.replace("/store");
   };
 
-
   return (
-    <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
+    <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-6">
+      {/* Header Profile */}
       <motion.div variants={fadeInUp} className="card p-4">
         <div className="flex items-center gap-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent">
@@ -2973,12 +3047,104 @@ function AccountSection() {
         </div>
       </motion.div>
 
-      <motion.div variants={fadeInUp} className="card p-4">
-        <h3 className="mb-3 text-sm font-semibold text-foreground">Pengaturan</h3>
-        <p className="text-xs text-muted-foreground">
-          Halaman account disiapkan untuk fase berikutnya (auth, profil toko, dan preferensi aplikasi).
+      {/* Promo Management */}
+      <motion.div variants={fadeInUp} className="card p-5">
+        <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <ImageIcon className="h-4 w-4 text-primary" />
+          Foto Promo Slide
+        </h3>
+
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept="image/*"
+          onChange={onFileChange}
+        />
+
+        {loadingPromos ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map((id) => {
+              const slide = promoSlides.find((s) => s.id === id);
+              const isUploading = uploadingSlot === id;
+
+              return (
+                <div
+                  key={id}
+                  className="group relative aspect-[21/11] overflow-hidden rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/30 transition hover:border-primary/50"
+                >
+                  {slide ? (
+                    <div className="relative h-full w-full">
+                      <Image
+                        src={`${slide.url}?t=${slide.timestamp}`}
+                        alt={`Slot ${id}`}
+                        fill
+                        className="object-cover"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                        <button
+                          onClick={() => handleFileSelect(id)}
+                          className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-primary shadow-sm hover:scale-105 active:scale-95"
+                        >
+                          Ganti Foto
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleFileSelect(id)}
+                      className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary"
+                    >
+                      <Plus className="h-6 w-6" />
+                      <span className="text-[10px] font-medium uppercase tracking-wider">Slot {id}</span>
+                    </button>
+                  )}
+
+                  {isUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="mt-4 text-[10px] text-muted-foreground">
+          * Format rasio 21:11 (Landscape). Maksimal 4 slide. Foto akan otomatis aktif di halaman depan.
         </p>
       </motion.div>
+
+      {/* Cropper Modal - Rendered via Portal or Fixed */}
+      <AnimatePresence>
+        {showCropper && cropperImageSrc && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          >
+            <div className="w-full max-w-2xl">
+              <ImageCropper
+                imageSrc={cropperImageSrc}
+                onCancel={() => {
+                  setShowCropper(false);
+                  setCropperImageSrc(null);
+                }}
+                onCropComplete={handleCropComplete}
+                cropAspectRatio={21 / 11}
+                outputWidth={1000}
+                outputHeight={524}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <motion.div variants={fadeInUp} className="card p-1">
         <button
@@ -2986,11 +3152,7 @@ function AccountSection() {
           disabled={loggingOut}
           className="flex w-full items-center justify-center gap-2 rounded-lg p-3 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50"
         >
-          {loggingOut ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <LogOut className="h-4 w-4" />
-          )}
+          {loggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
           {loggingOut ? "Keluar..." : "Keluar"}
         </button>
       </motion.div>
