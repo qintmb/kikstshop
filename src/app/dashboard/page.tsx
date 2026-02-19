@@ -1,40 +1,56 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { format, parseISO, startOfDay, startOfWeek, startOfMonth, startOfYear, subDays } from "date-fns";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  format,
+  parseISO,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+  subDays,
+} from "date-fns";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
-import { motion, AnimatePresence, number } from "framer-motion";
+import { AnimatePresence, motion, number } from "framer-motion";
 import {
-  LayoutDashboard,
-  ShoppingBag,
-  ShoppingCart,
-  Package,
-  TrendingUp,
-  User,
-  ChevronRight,
   AlertTriangle,
-  Loader2,
+  ArrowDownLeft,
+  Bell,
+  Check,
+  ChevronRight,
+  Clock,
+  Coins,
   FileDown,
   FileSpreadsheet,
-  Plus,
-  Pencil,
-  Check,
-  Search,
-  Bell,
-  Trash2,
-  X,
-  Upload,
-  ImageIcon,
-  Coins,
-  LogOut,
   History,
+  ImageIcon,
+  LayoutDashboard,
+  Loader2,
+  LogOut,
+  Package,
+  Pencil,
+  Plus,
+  Search,
+  ShoppingBag,
+  ShoppingCart,
+  Trash2,
+  TrendingUp,
+  Upload,
+  User,
   Wallet,
-  ArrowDownLeft,
-  Clock,
+  X,
 } from "lucide-react";
 import { ImageCropper } from "@/components/ImageCropper";
 import { generateFileName } from "@/lib/imageUtils";
@@ -51,8 +67,15 @@ type ChartRow = {
 
 const LOW_STOCK_THRESHOLD = 5;
 
-const NAV_ITEMS: Array<{ key: TabKey; label: string; title: string; icon: React.ElementType }> = [
-  { key: "dashboard", label: "Home", title: "Dashboard", icon: LayoutDashboard },
+const NAV_ITEMS: Array<
+  { key: TabKey; label: string; title: string; icon: React.ElementType }
+> = [
+  {
+    key: "dashboard",
+    label: "Home",
+    title: "Dashboard",
+    icon: LayoutDashboard,
+  },
   { key: "shop", label: "Shop", title: "Transaksi", icon: ShoppingBag },
   { key: "stock", label: "Stock", title: "Stok", icon: Package },
   { key: "income", label: "Transaction", title: "History", icon: TrendingUp },
@@ -98,7 +121,9 @@ export default function HomePage() {
   const [qty, setQty] = useState(0);
   const [buyerName, setBuyerName] = useState("");
   const [soldAt, setSoldAt] = useState(nowLocalInput());
-  const [saleStatus, setSaleStatus] = useState<"lunas" | "belum_bayar">("lunas");
+  const [saleStatus, setSaleStatus] = useState<"lunas" | "belum_bayar">(
+    "lunas",
+  );
   const [submittingSale, setSubmittingSale] = useState(false);
 
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
@@ -106,7 +131,9 @@ export default function HomePage() {
   const [priceInput, setPriceInput] = useState("");
   const [addStockInput, setAddStockInput] = useState("");
 
-  const [fromDate, setFromDate] = useState(format(subDays(new Date(), 29), "yyyy-MM-dd"));
+  const [fromDate, setFromDate] = useState(
+    format(subDays(new Date(), 29), "yyyy-MM-dd"),
+  );
   const [toDate, setToDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   // Add Item Dialog states
@@ -115,7 +142,9 @@ export default function HomePage() {
   const [newItemPrice, setNewItemPrice] = useState("");
   const [newItemStock, setNewItemStock] = useState("");
   const [newItemImageBlob, setNewItemImageBlob] = useState<Blob | null>(null);
-  const [newItemImagePreview, setNewItemImagePreview] = useState<string | null>(null);
+  const [newItemImagePreview, setNewItemImagePreview] = useState<string | null>(
+    null,
+  );
   const [submittingNewItem, setSubmittingNewItem] = useState(false);
 
   // Expense Form States
@@ -138,7 +167,9 @@ export default function HomePage() {
 
   // Delete mode states
   const [deleteMode, setDeleteMode] = useState(false);
-  const [selectedForDelete, setSelectedForDelete] = useState<Set<number>>(new Set());
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<number>>(
+    new Set(),
+  );
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deletingItems, setDeletingItems] = useState(false);
 
@@ -148,22 +179,21 @@ export default function HomePage() {
   // Get current tab info
   const currentTab = NAV_ITEMS.find((item) => item.key === activeTab);
 
-
   // Helper to ensure hidden system item exists for Modal entries
   const getSystemModalId = async (): Promise<number | null> => {
     if (!hasSupabaseEnv) return null;
-    
+
     const SYSTEM_NAME = "SYSTEM_MODAL_DONOTDELETE";
-    
+
     // Check if exists
     const { data: existing } = await supabase
       .from("stock_items")
       .select("id")
       .eq("name", SYSTEM_NAME)
       .single();
-      
+
     if (existing) return existing.id;
-    
+
     // Create if missing
     const { data: created, error } = await supabase
       .from("stock_items")
@@ -171,16 +201,16 @@ export default function HomePage() {
         name: SYSTEM_NAME,
         stock: 0,
         price: 0,
-        image_url: null
+        image_url: null,
       })
       .select("id")
       .single();
-      
+
     if (error) {
       console.error("Failed to create system modal item:", error);
       return null;
     }
-    
+
     return created.id;
   };
 
@@ -199,7 +229,9 @@ export default function HomePage() {
         .order("created_at", { ascending: false }),
       supabase
         .from("sales")
-        .select("id,sold_at,stock_item_id,item_name,unit_price,qty,total_price,buyer_name,status")
+        .select(
+          "id,sold_at,stock_item_id,item_name,unit_price,qty,total_price,buyer_name,status",
+        )
         .order("sold_at", { ascending: false }),
       supabase
         .from("expenses")
@@ -208,7 +240,10 @@ export default function HomePage() {
     ]);
 
     if (stockRes.error || salesRes.error || expensesRes.error) {
-      setError(stockRes.error?.message ?? salesRes.error?.message ?? expensesRes.error?.message ?? "Failed loading data");
+      setError(
+        stockRes.error?.message ?? salesRes.error?.message ??
+          expensesRes.error?.message ?? "Failed loading data",
+      );
       setLoading(false);
       return;
     }
@@ -219,7 +254,9 @@ export default function HomePage() {
         price: toNumber(item.price),
         stock: toNumber(item.stock),
       }))
-      .filter((item) => item.name !== "SYSTEM_MODAL_DONOTDELETE") as StockItem[];
+      .filter((item) =>
+        item.name !== "SYSTEM_MODAL_DONOTDELETE"
+      ) as StockItem[];
 
     const parsedSales = (salesRes.data ?? []).map((item) => ({
       ...item,
@@ -251,9 +288,21 @@ export default function HomePage() {
 
     const channel = supabase
       .channel("kikstshop-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "stock_items" }, loadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, loadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, loadAll)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "stock_items",
+      }, loadAll)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "sales" },
+        loadAll,
+      )
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "expenses",
+      }, loadAll)
       .subscribe();
 
     return () => {
@@ -266,7 +315,10 @@ export default function HomePage() {
     const totalRevenue = sales
       .filter((s) => s.status === "lunas")
       .reduce((acc, item) => acc + item.total_price, 0);
-    const totalExpenses = expenses.reduce((acc, item) => acc + item.total_cost, 0);
+    const totalExpenses = expenses.reduce(
+      (acc, item) => acc + item.total_cost,
+      0,
+    );
     const piutang = sales
       .filter((s) => s.status === "belum_bayar")
       .reduce((acc, item) => acc + item.total_price, 0);
@@ -302,14 +354,19 @@ export default function HomePage() {
   }, [sales]);
 
   const lowStockItems = useMemo(
-    () => stockItems.filter((item) => item.stock <= LOW_STOCK_THRESHOLD).sort((a, b) => a.stock - b.stock),
+    () =>
+      stockItems.filter((item) => item.stock <= LOW_STOCK_THRESHOLD).sort((
+        a,
+        b,
+      ) => a.stock - b.stock),
     [stockItems],
   );
 
   const effectiveSelectedStockId = selectedStockId ?? stockItems[0]?.id ?? null;
 
   const selectedItem = useMemo(
-    () => stockItems.find((item) => item.id === effectiveSelectedStockId) ?? null,
+    () =>
+      stockItems.find((item) => item.id === effectiveSelectedStockId) ?? null,
     [stockItems, effectiveSelectedStockId],
   );
 
@@ -378,15 +435,17 @@ export default function HomePage() {
     setBuyerName("");
     setSoldAt(nowLocalInput());
     setSaleStatus("lunas");
-    
+
     // Show success popup
     setShowSuccessPopup(true);
     setTimeout(() => setShowSuccessPopup(false), 2500);
-    
+
     await loadAll();
   };
 
-  const handleSubmitExpense = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmitExpense = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
 
     if (!hasSupabaseEnv) {
@@ -416,7 +475,9 @@ export default function HomePage() {
     setSubmittingExpense(true);
     setError(null);
 
-    const description = `${expenseItem.trim()} (Qty: ${qtyVal})${expenseNote ? ` - ${expenseNote}` : ""}`;
+    const description = `${expenseItem.trim()} (Qty: ${qtyVal})${
+      expenseNote ? ` - ${expenseNote}` : ""
+    }`;
 
     const { error: insertError } = await supabase.from("expenses").insert({
       bought_at: new Date(expenseDate).toISOString(),
@@ -495,13 +556,17 @@ export default function HomePage() {
     await loadAll();
   };
 
-  const handleUpdateExpense = async (id: number, data: { description: string; total_cost: number; bought_at: string }) => {
+  const handleUpdateExpense = async (
+    id: number,
+    data: { description: string; total_cost: number; bought_at: string },
+  ) => {
     if (!hasSupabaseEnv) {
       setError("Supabase environment variables not configured.");
       return;
     }
 
-    const { error: updateError } = await supabase.from("expenses").update(data).eq("id", id);
+    const { error: updateError } = await supabase.from("expenses").update(data)
+      .eq("id", id);
     if (updateError) {
       setError(updateError.message);
       return;
@@ -515,7 +580,10 @@ export default function HomePage() {
       return;
     }
 
-    const { error: deleteError } = await supabase.from("expenses").delete().eq("id", id);
+    const { error: deleteError } = await supabase.from("expenses").delete().eq(
+      "id",
+      id,
+    );
     if (deleteError) {
       setError(deleteError.message);
       return;
@@ -530,7 +598,9 @@ export default function HomePage() {
       return;
     }
 
-    const { error: updateError } = await supabase.from("stock_items").update({ price: nextPrice }).eq("id", id);
+    const { error: updateError } = await supabase.from("stock_items").update({
+      price: nextPrice,
+    }).eq("id", id);
     if (updateError) {
       setError(updateError.message);
       return;
@@ -712,7 +782,9 @@ export default function HomePage() {
     setDeletingItems(true);
     setError(null);
 
-    const itemsToDelete = stockItems.filter((item) => selectedForDelete.has(item.id));
+    const itemsToDelete = stockItems.filter((item) =>
+      selectedForDelete.has(item.id)
+    );
 
     // Delete images from bucket (batch)
     const filesToDelete = itemsToDelete
@@ -720,7 +792,8 @@ export default function HomePage() {
       .filter((name): name is string => !!name);
 
     if (filesToDelete.length > 0) {
-      const { error: storageError } = await supabase.storage.from("item").remove(filesToDelete);
+      const { error: storageError } = await supabase.storage.from("item")
+        .remove(filesToDelete);
       if (storageError) {
         console.error("Storage delete error:", storageError.message);
       }
@@ -743,10 +816,13 @@ export default function HomePage() {
     await loadAll();
   };
 
-
   const exportExcel = () => {
-    const modalSales = filteredSales.filter((s) => s.item_name === "Modal / Dana Awal");
-    const actualSales = filteredSales.filter((s) => s.item_name !== "Modal / Dana Awal");
+    const modalSales = filteredSales.filter((s) =>
+      s.item_name === "Modal / Dana Awal"
+    );
+    const actualSales = filteredSales.filter((s) =>
+      s.item_name !== "Modal / Dana Awal"
+    );
 
     const totalRevenue = actualSales.reduce((a, s) => a + s.total_price, 0);
     const totalModal = modalSales.reduce((a, s) => a + s.total_price, 0);
@@ -759,12 +835,36 @@ export default function HomePage() {
       ["LAPORAN PENGADAAN & PENJUALAN SOUVENIR"],
       ["SEKSI EKONOMI"],
       [],
-      ["Dari Tanggal", `: ${fromDate}`, null, null, null, "Tanggal Cetak", `: ${now}`],
+      [
+        "Dari Tanggal",
+        `: ${fromDate}`,
+        null,
+        null,
+        null,
+        "Tanggal Cetak",
+        `: ${now}`,
+      ],
       ["Sampai Tanggal", `: ${toDate}`],
       [],
-      ["Total Penjualan", `: ${actualSales.length} Transaksi`, null, null, null, "Pengeluaran", `: ${currency(totalExpense)}`],
+      [
+        "Total Penjualan",
+        `: ${actualSales.length} Transaksi`,
+        null,
+        null,
+        null,
+        "Pengeluaran",
+        `: ${currency(totalExpense)}`,
+      ],
       ["Penjualan", `: ${currency(totalRevenue)}`],
-      ["Total Modal", `: ${currency(totalModal)}`, null, null, null, "Pendapatan Bersih", `: ${currency(pendapatan)}`],
+      [
+        "Total Modal",
+        `: ${currency(totalModal)}`,
+        null,
+        null,
+        null,
+        "Pendapatan Bersih",
+        `: ${currency(pendapatan)}`,
+      ],
       [],
       ["Tanggal", "Nama Barang", "Qty", "Harga", "Total", "Pembeli", "Status"],
     ];
@@ -787,7 +887,7 @@ export default function HomePage() {
     worksheet["!cols"] = [
       { wch: 20 }, // A - Tanggal
       { wch: 28 }, // B - Nama Barang
-      { wch: 6 },  // C - Qty
+      { wch: 6 }, // C - Qty
       { wch: 14 }, // D - Harga
       { wch: 14 }, // E - Total
       { wch: 18 }, // F - Pembeli
@@ -806,11 +906,19 @@ export default function HomePage() {
   };
 
   const exportPdf = () => {
-    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "pt",
+      format: "a4",
+    });
     const pageWidth = doc.internal.pageSize.getWidth();
 
-    const modalSales = filteredSales.filter((s) => s.item_name === "Modal / Dana Awal");
-    const actualSales = filteredSales.filter((s) => s.item_name !== "Modal / Dana Awal");
+    const modalSales = filteredSales.filter((s) =>
+      s.item_name === "Modal / Dana Awal"
+    );
+    const actualSales = filteredSales.filter((s) =>
+      s.item_name !== "Modal / Dana Awal"
+    );
 
     const totalRevenue = actualSales.reduce((a, s) => a + s.total_price, 0);
     const totalModal = modalSales.reduce((a, s) => a + s.total_price, 0);
@@ -821,7 +929,9 @@ export default function HomePage() {
     // Title
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text("LAPORAN PENGADAAN & PENJUALAN SOUVENIR", pageWidth / 2, 36, { align: "center" });
+    doc.text("LAPORAN PENGADAAN & PENJUALAN SOUVENIR", pageWidth / 2, 36, {
+      align: "center",
+    });
     doc.setFontSize(12);
     doc.text("SEKSI EKONOMI", pageWidth / 2, 52, { align: "center" });
 
@@ -832,19 +942,39 @@ export default function HomePage() {
     doc.text(`Dari Tanggal       : ${fromDate}`, 40, infoY);
     doc.text(`Sampai Tanggal  : ${toDate}`, 40, infoY + 14);
 
-    doc.text(`Total Penjualan  : ${actualSales.length} Transaksi`, 40, infoY + 36);
-    doc.text(`Penjualan            : ${currency(totalRevenue)}`, 40, infoY + 50);
+    doc.text(
+      `Total Penjualan  : ${actualSales.length} Transaksi`,
+      40,
+      infoY + 36,
+    );
+    doc.text(
+      `Penjualan            : ${currency(totalRevenue)}`,
+      40,
+      infoY + 50,
+    );
     doc.text(`Total Modal         : ${currency(totalModal)}`, 40, infoY + 64);
     doc.text(`Pendapatan Bersih: ${currency(pendapatan)}`, 40, infoY + 78);
 
     // Right info block
     doc.text(`Tanggal Cetak : ${now}`, pageWidth - 200, infoY);
-    doc.text(`Pengeluaran    : ${currency(totalExpense)}`, pageWidth - 200, infoY + 36);
+    doc.text(
+      `Pengeluaran    : ${currency(totalExpense)}`,
+      pageWidth - 200,
+      infoY + 36,
+    );
 
     // Table
     autoTable(doc, {
       startY: infoY + 84,
-      head: [["Tanggal", "Nama Barang", "Qty", "Harga", "Total", "Pembeli", "Status"]],
+      head: [[
+        "Tanggal",
+        "Nama Barang",
+        "Qty",
+        "Harga",
+        "Total",
+        "Pembeli",
+        "Status",
+      ]],
       body: filteredSales.map((item) => [
         format(new Date(item.sold_at), "dd/MM/yyyy HH:mm"),
         item.item_name,
@@ -886,8 +1016,10 @@ export default function HomePage() {
     ];
     return combined
       .sort((a, b) => {
-        const dateA = new Date(a.type === "sale" ? a.sold_at : a.bought_at).getTime();
-        const dateB = new Date(b.type === "sale" ? b.sold_at : b.bought_at).getTime();
+        const dateA = new Date(a.type === "sale" ? a.sold_at : a.bought_at)
+          .getTime();
+        const dateB = new Date(b.type === "sale" ? b.sold_at : b.bought_at)
+          .getTime();
         return dateB - dateA;
       })
       .slice(0, 5);
@@ -900,40 +1032,53 @@ export default function HomePage() {
         <div className="mx-auto max-w-md px-4 py-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Kikstshop</p>
-              <h1 className="text-lg font-semibold text-foreground">{currentTab?.title ?? "Sales Tracker"}</h1>
+              <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+                Kikstshop
+              </p>
+              <h1 className="text-lg font-semibold text-foreground">
+                {currentTab?.title ?? "Sales Tracker"}
+              </h1>
             </div>
           </div>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-md px-4 pb-24 pt-2">
-        {!hasSupabaseEnv ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="card p-4"
-          >
-            <p className="text-sm text-amber-700">
-              Isi <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">NEXT_PUBLIC_SUPABASE_URL</code> dan{" "}
-              <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> di file .env.local.
-            </p>
-          </motion.div>
-        ) : null}
+        {!hasSupabaseEnv
+          ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="card p-4"
+            >
+              <p className="text-sm text-amber-700">
+                Isi{" "}
+                <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">
+                  NEXT_PUBLIC_SUPABASE_URL
+                </code>{" "}
+                dan{" "}
+                <code className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">
+                  NEXT_PUBLIC_SUPABASE_ANON_KEY
+                </code>{" "}
+                di file .env.local.
+              </p>
+            </motion.div>
+          )
+          : null}
 
-        {error ? (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700"
-          >
-            {error}
-          </motion.div>
-        ) : null}
+        {error
+          ? (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700"
+            >
+              {error}
+            </motion.div>
+          )
+          : null}
 
-        {loading ? (
-          <LoadingState />
-        ) : (
+        {loading ? <LoadingState /> : (
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -943,125 +1088,140 @@ export default function HomePage() {
               exit="exit"
               transition={{ duration: 0.2, ease: "easeOut" }}
             >
-              {activeTab === "dashboard" ? (
-                <DashboardSection
-                  sales={sales}
-                  expenses={expenses}
-                  chartData={chartData}
-                  recentTransactions={recentTransactions}
-                  onViewDetail={() => setActiveTab("income")}
-                />
-              ) : null}
+              {activeTab === "dashboard"
+                ? (
+                  <DashboardSection
+                    sales={sales}
+                    expenses={expenses}
+                    chartData={chartData}
+                    recentTransactions={recentTransactions}
+                    onViewDetail={() => setActiveTab("income")}
+                  />
+                )
+                : null}
 
-              {activeTab === "shop" ? (
-                <ShopSection
-                  stockItems={stockItems}
-                  selectedStockId={effectiveSelectedStockId}
-                  setSelectedStockId={setSelectedStockId}
-                  selectedItem={selectedItem}
-                  qty={qty}
-                  setQty={setQty}
-                  buyerName={buyerName}
-                  setBuyerName={setBuyerName}
-                  soldAt={soldAt}
-                  setSoldAt={setSoldAt}
-                  saleTotal={saleTotal}
-                  submitting={submittingSale}
-                  onSubmit={handleSubmitSale}
-                  saleStatus={saleStatus}
-                  setSaleStatus={setSaleStatus}
-                  // Expense props
-                  expenseDate={expenseDate}
-                  setExpenseDate={setExpenseDate}
-                  expenseItem={expenseItem}
-                  setExpenseItem={setExpenseItem}
-                  expensePrice={expensePrice}
-                  setExpensePrice={setExpensePrice}
-                  expenseQty={expenseQty}
-                  setExpenseQty={setExpenseQty}
-                  expenseOtherCost={expenseOtherCost}
-                  setExpenseOtherCost={setExpenseOtherCost}
-                  expenseNote={expenseNote}
-                  setExpenseNote={setExpenseNote}
-                  submittingExpense={submittingExpense}
-                  onSubmitExpense={handleSubmitExpense}
-                  modalDate={modalDate}
-                  setModalDate={setModalDate}
-                  modalAmount={modalAmount}
-                  setModalAmount={setModalAmount}
-                  submittingModal={submittingModal}
-                  onSubmitModal={handleSubmitModal}
-                />
-              ) : null}
+              {activeTab === "shop"
+                ? (
+                  <ShopSection
+                    stockItems={stockItems}
+                    selectedStockId={effectiveSelectedStockId}
+                    setSelectedStockId={setSelectedStockId}
+                    selectedItem={selectedItem}
+                    qty={qty}
+                    setQty={setQty}
+                    buyerName={buyerName}
+                    setBuyerName={setBuyerName}
+                    soldAt={soldAt}
+                    setSoldAt={setSoldAt}
+                    saleTotal={saleTotal}
+                    submitting={submittingSale}
+                    onSubmit={handleSubmitSale}
+                    saleStatus={saleStatus}
+                    setSaleStatus={setSaleStatus}
+                    // Expense props
+                    expenseDate={expenseDate}
+                    setExpenseDate={setExpenseDate}
+                    expenseItem={expenseItem}
+                    setExpenseItem={setExpenseItem}
+                    expensePrice={expensePrice}
+                    setExpensePrice={setExpensePrice}
+                    expenseQty={expenseQty}
+                    setExpenseQty={setExpenseQty}
+                    expenseOtherCost={expenseOtherCost}
+                    setExpenseOtherCost={setExpenseOtherCost}
+                    expenseNote={expenseNote}
+                    setExpenseNote={setExpenseNote}
+                    submittingExpense={submittingExpense}
+                    onSubmitExpense={handleSubmitExpense}
+                    modalDate={modalDate}
+                    setModalDate={setModalDate}
+                    modalAmount={modalAmount}
+                    setModalAmount={setModalAmount}
+                    submittingModal={submittingModal}
+                    onSubmitModal={handleSubmitModal}
+                  />
+                )
+                : null}
 
-              {activeTab === "stock" ? (
-                <StockSection
-                  stockItems={stockItems}
-                  editingPriceId={editingPriceId}
-                  editingStockId={editingStockId}
-                  priceInput={priceInput}
-                  addStockInput={addStockInput}
-                  setEditingPriceId={setEditingPriceId}
-                  setEditingStockId={setEditingStockId}
-                  setPriceInput={setPriceInput}
-                  setAddStockInput={setAddStockInput}
-                  onSavePrice={handlePriceSave}
-                  onAddStock={handleAddStock}
-                  deleteMode={deleteMode}
-                  setDeleteMode={setDeleteMode}
-                  selectedForDelete={selectedForDelete}
-                  toggleDeleteSelection={toggleDeleteSelection}
-                  onAddItem={() => setShowAddDialog(true)}
-                  onConfirmDelete={() => setConfirmingDelete(true)}
-                  exitDeleteMode={exitDeleteMode}
-                />
-              ) : null}
+              {activeTab === "stock"
+                ? (
+                  <StockSection
+                    stockItems={stockItems}
+                    editingPriceId={editingPriceId}
+                    editingStockId={editingStockId}
+                    priceInput={priceInput}
+                    addStockInput={addStockInput}
+                    setEditingPriceId={setEditingPriceId}
+                    setEditingStockId={setEditingStockId}
+                    setPriceInput={setPriceInput}
+                    setAddStockInput={setAddStockInput}
+                    onSavePrice={handlePriceSave}
+                    onAddStock={handleAddStock}
+                    deleteMode={deleteMode}
+                    setDeleteMode={setDeleteMode}
+                    selectedForDelete={selectedForDelete}
+                    toggleDeleteSelection={toggleDeleteSelection}
+                    onAddItem={() => setShowAddDialog(true)}
+                    onConfirmDelete={() => setConfirmingDelete(true)}
+                    exitDeleteMode={exitDeleteMode}
+                  />
+                )
+                : null}
 
-              {activeTab === "income" ? (
-                <IncomeSection
-                  sales={filteredSales}
-                  expenses={filteredExpenses}
-                  stockItems={stockItems}
-                  fromDate={fromDate}
-                  toDate={toDate}
-                  setFromDate={setFromDate}
-                  setToDate={setToDate}
-                  onExportPdf={exportPdf}
-                  onExportExcel={exportExcel}
-                  onUpdateSale={async (id: number, data: { qty?: number; buyer_name?: string | null; status?: "lunas" | "belum_bayar" }) => {
-                    // Recalculate total_price if qty changed
-                    const updateData: Record<string, unknown> = { ...data };
-                    if (data.qty !== undefined) {
-                      const sale = filteredSales.find((s) => s.id === id);
-                      if (sale) {
-                        updateData.total_price = sale.unit_price * data.qty;
+              {activeTab === "income"
+                ? (
+                  <IncomeSection
+                    sales={filteredSales}
+                    expenses={filteredExpenses}
+                    stockItems={stockItems}
+                    fromDate={fromDate}
+                    toDate={toDate}
+                    setFromDate={setFromDate}
+                    setToDate={setToDate}
+                    onExportPdf={exportPdf}
+                    onExportExcel={exportExcel}
+                    onUpdateSale={async (
+                      id: number,
+                      data: {
+                        qty?: number;
+                        buyer_name?: string | null;
+                        status?: "lunas" | "belum_bayar";
+                      },
+                    ) => {
+                      // Recalculate total_price if qty changed
+                      const updateData: Record<string, unknown> = { ...data };
+                      if (data.qty !== undefined) {
+                        const sale = filteredSales.find((s) => s.id === id);
+                        if (sale) {
+                          updateData.total_price = sale.unit_price * data.qty;
+                        }
                       }
-                    }
-                    const { error: updateError } = await supabase
-                      .from("sales")
-                      .update(updateData)
-                      .eq("id", id);
-                    if (updateError) {
-                      setError(updateError.message);
-                      return;
-                    }
-                    await loadAll();
-                  }}
-                  onDeleteSale={async (id: number) => {
-                    const { error: deleteError } = await supabase
-                      .from("sales")
-                      .delete()
-                      .eq("id", id);
-                    if (deleteError) {
-                      setError(deleteError.message);
-                      return;
-                    }
-                    await loadAll();
-                  }}
-                  onUpdateExpense={handleUpdateExpense}
-                  onDeleteExpense={handleDeleteExpense}
-                />
-              ) : null}
+                      const { error: updateError } = await supabase
+                        .from("sales")
+                        .update(updateData)
+                        .eq("id", id);
+                      if (updateError) {
+                        setError(updateError.message);
+                        return;
+                      }
+                      await loadAll();
+                    }}
+                    onDeleteSale={async (id: number) => {
+                      const { error: deleteError } = await supabase
+                        .from("sales")
+                        .delete()
+                        .eq("id", id);
+                      if (deleteError) {
+                        setError(deleteError.message);
+                        return;
+                      }
+                      await loadAll();
+                    }}
+                    onUpdateExpense={handleUpdateExpense}
+                    onDeleteExpense={handleDeleteExpense}
+                  />
+                )
+                : null}
 
               {activeTab === "account" ? <AccountSection /> : null}
             </motion.div>
@@ -1098,15 +1258,23 @@ export default function HomePage() {
                   )}
                   <motion.div
                     className="relative z-10"
-                    animate={isActive ? { scale: 1.1, y: -1 } : { scale: 1, y: 0 }}
+                    animate={isActive
+                      ? { scale: 1.1, y: -1 }
+                      : { scale: 1, y: 0 }}
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
                   >
-                    <Icon 
-                      className={`h-5 w-5 transition-colors duration-200 ${isActive ? "text-white" : ""}`} 
-                      strokeWidth={isActive ? 2.5 : 2} 
+                    <Icon
+                      className={`h-5 w-5 transition-colors duration-200 ${
+                        isActive ? "text-white" : ""
+                      }`}
+                      strokeWidth={isActive ? 2.5 : 2}
                     />
                   </motion.div>
-                  <span className={`relative z-10 text-[10px] font-medium transition-colors duration-200 ${isActive ? "text-white" : ""}`}>
+                  <span
+                    className={`relative z-10 text-[10px] font-medium transition-colors duration-200 ${
+                      isActive ? "text-white" : ""
+                    }`}
+                  >
                     {item.label}
                   </span>
                 </button>
@@ -1134,124 +1302,148 @@ export default function HomePage() {
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
                 className="dialog-content"
               >
-                {showCropper && cropperImageSrc ? (
-                  <div className="-m-6 overflow-hidden rounded-xl">
-                    <ImageCropper
-                      imageSrc={cropperImageSrc}
-                      onCropComplete={handleCropComplete}
-                      onCancel={handleCropCancel}
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <div className="mb-4 flex items-center justify-between">
-                      <h2 className="text-lg font-semibold text-foreground">Tambah Item Baru</h2>
-                      <button
-                        type="button"
-                        onClick={resetAddItemForm}
-                        className="rounded-full p-1.5 text-muted-foreground transition hover:bg-muted"
-                      >
-                        <X className="h-5 w-5" />
-                      </button>
+                {showCropper && cropperImageSrc
+                  ? (
+                    <div className="-m-6 overflow-hidden rounded-xl">
+                      <ImageCropper
+                        imageSrc={cropperImageSrc}
+                        onCropComplete={handleCropComplete}
+                        onCancel={handleCropCancel}
+                      />
                     </div>
-
-                    <form onSubmit={handleAddNewItem} className="space-y-4">
-                      {/* Image Upload */}
-                      <div>
-                        <label className="mb-1.5 block text-sm font-medium text-foreground">Foto Produk</label>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageSelect}
-                          className="hidden"
-                          id="image-upload"
-                        />
-                        <label
-                          htmlFor="image-upload"
-                          className={`upload-area flex flex-col items-center justify-center ${newItemImagePreview ? "has-image" : ""}`}
+                  )
+                  : (
+                    <>
+                      <div className="mb-4 flex items-center justify-between">
+                        <h2 className="text-lg font-semibold text-foreground">
+                          Tambah Item Baru
+                        </h2>
+                        <button
+                          type="button"
+                          onClick={resetAddItemForm}
+                          className="rounded-full p-1.5 text-muted-foreground transition hover:bg-muted"
                         >
-                          {newItemImagePreview ? (
-                            <div className="relative">
-                              <img
-                                src={newItemImagePreview}
-                                alt="Preview"
-                                className="h-32 w-32 rounded-lg object-cover"
-                              />
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition hover:opacity-100 rounded-lg">
-                                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Ubah Foto</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground" />
-                              <span className="text-sm text-muted-foreground">Klik untuk upload foto</span>
-                              <span className="mt-1 text-xs text-muted-foreground/70">Anda bisa crop dan zoom</span>
-                            </>
-                          )}
-                        </label>
+                          <X className="h-5 w-5" />
+                        </button>
                       </div>
 
-                      {/* Name */}
-                      <div>
-                        <label className="mb-1.5 block text-sm font-medium text-foreground">Nama Barang</label>
-                        <input
-                          type="text"
-                          value={newItemName}
-                          onChange={(e) => setNewItemName(e.target.value)}
-                          className="input-base"
-                          placeholder="Contoh: Sepatu Nike Air Max"
-                          required
-                        />
-                      </div>
+                      <form onSubmit={handleAddNewItem} className="space-y-4">
+                        {/* Image Upload */}
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">
+                            Foto Produk
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageSelect}
+                            className="hidden"
+                            id="image-upload"
+                          />
+                          <label
+                            htmlFor="image-upload"
+                            className={`upload-area flex flex-col items-center justify-center ${
+                              newItemImagePreview ? "has-image" : ""
+                            }`}
+                          >
+                            {newItemImagePreview
+                              ? (
+                                <div className="relative">
+                                  <img
+                                    src={newItemImagePreview}
+                                    alt="Preview"
+                                    className="h-32 w-32 rounded-lg object-cover"
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition hover:opacity-100 rounded-lg">
+                                    <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                                      Ubah Foto
+                                    </span>
+                                  </div>
+                                </div>
+                              )
+                              : (
+                                <>
+                                  <ImageIcon className="mb-2 h-8 w-8 text-muted-foreground" />
+                                  <span className="text-sm text-muted-foreground">
+                                    Klik untuk upload foto
+                                  </span>
+                                  <span className="mt-1 text-xs text-muted-foreground/70">
+                                    Anda bisa crop dan zoom
+                                  </span>
+                                </>
+                              )}
+                          </label>
+                        </div>
 
-                      {/* Price */}
-                      <div>
-                        <label className="mb-1.5 block text-sm font-medium text-foreground">Harga (Rp)</label>
-                        <input
-                          type="number"
-                          value={newItemPrice}
-                          onChange={(e) => setNewItemPrice(e.target.value)}
-                          className="input-base"
-                          placeholder="0"
-                          min={0}
-                          required
-                        />
-                      </div>
+                        {/* Name */}
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">
+                            Nama Barang
+                          </label>
+                          <input
+                            type="text"
+                            value={newItemName}
+                            onChange={(e) => setNewItemName(e.target.value)}
+                            className="input-base"
+                            placeholder="Contoh: Sepatu Nike Air Max"
+                            required
+                          />
+                        </div>
 
-                      {/* Stock */}
-                      <div>
-                        <label className="mb-1.5 block text-sm font-medium text-foreground">Stok Awal</label>
-                        <input
-                          type="number"
-                          value={newItemStock}
-                          onChange={(e) => setNewItemStock(e.target.value)}
-                          className="input-base"
-                          placeholder="0"
-                          min={0}
-                          required
-                        />
-                      </div>
+                        {/* Price */}
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">
+                            Harga (Rp)
+                          </label>
+                          <input
+                            type="number"
+                            value={newItemPrice}
+                            onChange={(e) => setNewItemPrice(e.target.value)}
+                            className="input-base"
+                            placeholder="0"
+                            min={0}
+                            required
+                          />
+                        </div>
 
-                      <button
-                        type="submit"
-                        disabled={submittingNewItem}
-                        className="btn-primary mt-4"
-                      >
-                        {submittingNewItem ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Menyimpan...
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="h-4 w-4" />
-                            Tambah Item
-                          </>
-                        )}
-                      </button>
-                    </form>
-                  </>
-                )}
+                        {/* Stock */}
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">
+                            Stok Awal
+                          </label>
+                          <input
+                            type="number"
+                            value={newItemStock}
+                            onChange={(e) => setNewItemStock(e.target.value)}
+                            className="input-base"
+                            placeholder="0"
+                            min={0}
+                            required
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={submittingNewItem}
+                          className="btn-primary mt-4"
+                        >
+                          {submittingNewItem
+                            ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Menyimpan...
+                              </>
+                            )
+                            : (
+                              <>
+                                <Plus className="h-4 w-4" />
+                                Tambah Item
+                              </>
+                            )}
+                        </button>
+                      </form>
+                    </>
+                  )}
               </motion.div>
             </div>
           </div>
@@ -1279,9 +1471,12 @@ export default function HomePage() {
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
                   <Trash2 className="h-6 w-6 text-red-600" />
                 </div>
-                <h3 className="mb-2 text-lg font-semibold text-foreground">Hapus {selectedForDelete.size} Item?</h3>
+                <h3 className="mb-2 text-lg font-semibold text-foreground">
+                  Hapus {selectedForDelete.size} Item?
+                </h3>
                 <p className="mb-6 text-sm text-muted-foreground">
-                  Item yang dihapus tidak bisa dikembalikan. Foto juga akan dihapus dari storage.
+                  Item yang dihapus tidak bisa dikembalikan. Foto juga akan
+                  dihapus dari storage.
                 </p>
                 <div className="flex gap-3">
                   <button
@@ -1297,14 +1492,16 @@ export default function HomePage() {
                     disabled={deletingItems}
                     className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-600 disabled:opacity-50"
                   >
-                    {deletingItems ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Menghapus...
-                      </>
-                    ) : (
-                      "Ya, Hapus"
-                    )}
+                    {deletingItems
+                      ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Menghapus...
+                        </>
+                      )
+                      : (
+                        "Ya, Hapus"
+                      )}
                   </button>
                 </div>
               </motion.div>
@@ -1445,7 +1642,10 @@ function DashboardSection({
     const totalRevenue = fSales
       .filter((s) => s.status === "lunas")
       .reduce((acc, item) => acc + item.total_price, 0);
-    const totalExpenses = fExpenses.reduce((acc, item) => acc + item.total_cost, 0);
+    const totalExpenses = fExpenses.reduce(
+      (acc, item) => acc + item.total_cost,
+      0,
+    );
     const piutang = fSales
       .filter((s) => s.status === "belum_bayar")
       .reduce((acc, item) => acc + item.total_price, 0);
@@ -1459,15 +1659,24 @@ function DashboardSection({
   }, [sales, expenses, dashFilter]);
 
   return (
-    <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
+    <motion.section
+      variants={staggerContainer}
+      initial="initial"
+      animate="animate"
+      className="space-y-4"
+    >
       {/* Promo Banner */}
       <motion.div
         variants={fadeInUp}
         className="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary to-accent p-4"
       >
         <div className="relative z-10">
-          <p className="text-xs font-medium text-primary-foreground/80">Total Profit</p>
-          <p className="mt-1 text-3xl font-bold text-primary-foreground">{currency(metrics.profit)}</p>
+          <p className="text-xs font-medium text-primary-foreground/80">
+            Total Profit
+          </p>
+          <p className="mt-1 text-3xl font-bold text-primary-foreground">
+            {currency(metrics.profit)}
+          </p>
           <button
             onClick={onViewDetail}
             className="mt-3 flex items-center gap-1 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/30"
@@ -1499,15 +1708,38 @@ function DashboardSection({
 
       {/* Metrics Grid */}
       <motion.div variants={fadeInUp} className="grid grid-cols-2 gap-2">
-        <MetricCard label="Total Penjualan" value={metrics.totalSales.toLocaleString("id-ID")} variant="sales" icon={ShoppingCart} />
-        <MetricCard label="Pendapatan" value={currency(metrics.totalRevenue)} variant="revenue" icon={Wallet} />
-        <MetricCard label="Pengeluaran" value={currency(metrics.totalExpenses)} variant="expense" icon={ArrowDownLeft} />
-        <MetricCard label="Piutang" value={currency(metrics.piutang)} variant="piutang" icon={Clock} highlight={metrics.piutang > 0} />
+        <MetricCard
+          label="Total Penjualan"
+          value={metrics.totalSales.toLocaleString("id-ID")}
+          variant="sales"
+          icon={ShoppingCart}
+        />
+        <MetricCard
+          label="Pendapatan"
+          value={currency(metrics.totalRevenue)}
+          variant="revenue"
+          icon={Wallet}
+        />
+        <MetricCard
+          label="Pengeluaran"
+          value={currency(metrics.totalExpenses)}
+          variant="expense"
+          icon={ArrowDownLeft}
+        />
+        <MetricCard
+          label="Piutang"
+          value={currency(metrics.piutang)}
+          variant="piutang"
+          icon={Clock}
+          highlight={metrics.piutang > 0}
+        />
       </motion.div>
 
       {/* Sales Chart */}
       <motion.div variants={fadeInUp} className="card p-4">
-        <p className="mb-3 text-sm font-semibold text-foreground">Grafik Penjualan 30 Hari</p>
+        <p className="mb-3 text-sm font-semibold text-foreground">
+          Grafik Penjualan 30 Hari
+        </p>
         <div className="h-44">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData}>
@@ -1517,9 +1749,24 @@ function DashboardSection({
                   <stop offset="95%" stopColor="#1a4d4d" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" vertical={false} />
-              <XAxis dataKey="day" tick={{ fill: "#6b7280", fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={(value) => `${Math.round(value / 1000)}k`} tick={{ fill: "#6b7280", fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="#e5e5e5"
+                vertical={false}
+              />
+              <XAxis
+                dataKey="day"
+                tick={{ fill: "#6b7280", fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                tickFormatter={(value) => `${Math.round(value / 1000)}k`}
+                tick={{ fill: "#6b7280", fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+                width={35}
+              />
               <Tooltip
                 formatter={(value: number | undefined) => currency(value ?? 0)}
                 contentStyle={{
@@ -1530,7 +1777,13 @@ function DashboardSection({
                   fontSize: "12px",
                 }}
               />
-              <Area type="monotone" dataKey="amount" stroke="#1a4d4d" fill="url(#salesGradient)" strokeWidth={2} />
+              <Area
+                type="monotone"
+                dataKey="amount"
+                stroke="#1a4d4d"
+                fill="url(#salesGradient)"
+                strokeWidth={2}
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -1540,68 +1793,96 @@ function DashboardSection({
       <motion.div variants={fadeInUp} className="card p-4">
         <div className="mb-3 flex items-center gap-2">
           <History className="h-4 w-4 text-primary" />
-          <p className="text-sm font-semibold text-foreground">Riwayat Transaksi Terakhir</p>
+          <p className="text-sm font-semibold text-foreground">
+            Riwayat Transaksi Terakhir
+          </p>
         </div>
-        {recentTransactions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Belum ada transaksi.</p>
-        ) : (
-          <ul className="space-y-3">
-            {recentTransactions.map((transaction) => {
-              const isSale = transaction.type === "sale";
-              return (
-                <li key={`${transaction.type}-${transaction.id}`} className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                        isSale ? "bg-secondary text-primary" : "bg-red-100 text-red-600"
-                      }`}
-                    >
-                      {isSale ? <ShoppingBag className="h-4 w-4" /> : <LogOut className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {isSale ? transaction.item_name : transaction.description}
-                      </p>
-                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                        <span>
-                          {format(new Date(isSale ? transaction.sold_at : transaction.bought_at), "dd MMM, HH:mm")}
-                        </span>
-                        {isSale && transaction.buyer_name && (
-                          <>
-                            <span>•</span>
-                            <span>{transaction.buyer_name}</span>
-                          </>
-                        )}
-                        {isSale && (
-                          <>
-                            <span>•</span>
-                            <span
-                              className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${
-                                transaction.status === "lunas"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-orange-100 text-orange-700"
-                              }`}
-                            >
-                              {transaction.status === "lunas" ? "Lunas" : "Belum Bayar"}
-                            </span>
-                          </>
-                        )}
+        {recentTransactions.length === 0
+          ? (
+            <p className="text-sm text-muted-foreground">
+              Belum ada transaksi.
+            </p>
+          )
+          : (
+            <ul className="space-y-3">
+              {recentTransactions.map((transaction) => {
+                const isSale = transaction.type === "sale";
+                return (
+                  <li
+                    key={`${transaction.type}-${transaction.id}`}
+                    className="flex items-start justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                          isSale
+                            ? "bg-secondary text-primary"
+                            : "bg-red-100 text-red-600"
+                        }`}
+                      >
+                        {isSale
+                          ? <ShoppingBag className="h-4 w-4" />
+                          : <LogOut className="h-4 w-4" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {isSale
+                            ? transaction.item_name
+                            : transaction.description}
+                        </p>
+                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                          <span>
+                            {format(
+                              new Date(
+                                isSale
+                                  ? transaction.sold_at
+                                  : transaction.bought_at,
+                              ),
+                              "dd MMM, HH:mm",
+                            )}
+                          </span>
+                          {isSale && transaction.buyer_name && (
+                            <>
+                              <span>•</span>
+                              <span>{transaction.buyer_name}</span>
+                            </>
+                          )}
+                          {isSale && (
+                            <>
+                              <span>•</span>
+                              <span
+                                className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${
+                                  transaction.status === "lunas"
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-orange-100 text-orange-700"
+                                }`}
+                              >
+                                {transaction.status === "lunas"
+                                  ? "Lunas"
+                                  : "Belum Bayar"}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <span
-                    className={`text-sm font-semibold ${
-                      isSale ? "text-foreground" : "text-red-600"
-                    }`}
-                  >
-                    {isSale ? "+ " : "- "}
-                    {currency(isSale ? transaction.total_price : transaction.total_cost)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                    <span
+                      className={`text-sm font-semibold ${
+                        isSale ? "text-foreground" : "text-red-600"
+                      }`}
+                    >
+                      {isSale ? "+ " : "- "}
+                      {currency(
+                        isSale
+                          ? transaction.total_price
+                          : transaction.total_cost,
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
       </motion.div>
     </motion.section>
   );
@@ -1686,16 +1967,24 @@ function ShopSection({
 }) {
   const [activeMode, setActiveMode] = useState<"sale" | "expense">("sale");
 
-  const expenseTotal = (Number(expensePrice) || 0) * (expenseQty || 0) + (Number(expenseOtherCost) || 0);
+  const expenseTotal = (Number(expensePrice) || 0) * (expenseQty || 0) +
+    (Number(expenseOtherCost) || 0);
 
   return (
-    <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
+    <motion.section
+      variants={staggerContainer}
+      initial="initial"
+      animate="animate"
+      className="space-y-4"
+    >
       <motion.div variants={fadeInUp} className="card p-4">
         <div className="mb-4 flex items-center gap-2 rounded-lg bg-muted p-1">
           <button
             onClick={() => setActiveMode("sale")}
             className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
-              activeMode === "sale" ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+              activeMode === "sale"
+                ? "bg-white text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Penjualan
@@ -1703,216 +1992,244 @@ function ShopSection({
           <button
             onClick={() => setActiveMode("expense")}
             className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
-              activeMode === "expense" ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+              activeMode === "expense"
+                ? "bg-white text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Pengeluaran
           </button>
         </div>
 
-        {activeMode === "sale" ? (
-          <form className="space-y-3" onSubmit={onSubmit}>
-            <InputWrap label="Tanggal Transaksi">
-              <input
-                type="datetime-local"
-                value={soldAt}
-                onChange={(event) => setSoldAt(event.target.value)}
-                className="input-base"
-                required
-              />
-            </InputWrap>
-
-            <InputWrap label="Pilih Item">
-              <select
-                className="input-base"
-                value={selectedStockId ?? ""}
-                onChange={(event) => setSelectedStockId(Number(event.target.value))}
-                required
-              >
-                {stockItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} (stok {item.stock})
-                  </option>
-                ))}
-              </select>
-            </InputWrap>
-
-            <div className="grid grid-cols-2 gap-3">
-              <InputWrap label="Harga">
-                <input value={selectedItem ? currency(selectedItem.price) : "-"} readOnly className="input-base bg-muted" />
-              </InputWrap>
-
-              <InputWrap label="Qty">
+        {activeMode === "sale"
+          ? (
+            <form className="space-y-3" onSubmit={onSubmit}>
+              <InputWrap label="Tanggal Transaksi">
                 <input
-                  type="number"
-                  min={1}
-                  value={qty}
-                  onChange={(event) => setQty(Number(event.target.value))}
+                  type="datetime-local"
+                  value={soldAt}
+                  onChange={(event) => setSoldAt(event.target.value)}
                   className="input-base"
                   required
                 />
               </InputWrap>
-            </div>
 
-            <InputWrap label="Total Harga">
-              <input value={currency(saleTotal)} readOnly className="input-base bg-muted text-lg font-semibold text-primary" />
-            </InputWrap>
-
-            <InputWrap label="Nama pembeli (opsional)">
-              <input
-                type="text"
-                value={buyerName}
-                onChange={(event) => setBuyerName(event.target.value)}
-                className="input-base"
-                placeholder="Nama pembeli"
-              />
-            </InputWrap>
-
-            <InputWrap label="Status Pembayaran">
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSaleStatus("lunas")}
-                  className={`flex-1 rounded-lg py-2.5 text-xs font-semibold transition-all ${
-                    saleStatus === "lunas"
-                      ? "bg-emerald-500 text-white shadow-sm ring-2 ring-emerald-500/30"
-                      : "bg-muted text-muted-foreground hover:bg-emerald-50"
-                  }`}
+              <InputWrap label="Pilih Item">
+                <select
+                  className="input-base"
+                  value={selectedStockId ?? ""}
+                  onChange={(event) =>
+                    setSelectedStockId(Number(event.target.value))}
+                  required
                 >
-                  ✓ Lunas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSaleStatus("belum_bayar")}
-                  className={`flex-1 rounded-lg py-2.5 text-xs font-semibold transition-all ${
-                    saleStatus === "belum_bayar"
-                      ? "bg-orange-500 text-white shadow-sm ring-2 ring-orange-500/30"
-                      : "bg-muted text-muted-foreground hover:bg-orange-50"
-                  }`}
-                >
-                  Belum Bayar
-                </button>
+                  {stockItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} (stok {item.stock})
+                    </option>
+                  ))}
+                </select>
+              </InputWrap>
+
+              <div className="grid grid-cols-2 gap-3">
+                <InputWrap label="Harga">
+                  <input
+                    value={selectedItem ? currency(selectedItem.price) : "-"}
+                    readOnly
+                    className="input-base bg-muted"
+                  />
+                </InputWrap>
+
+                <InputWrap label="Qty">
+                  <input
+                    type="number"
+                    min={1}
+                    value={qty}
+                    onChange={(event) => setQty(Number(event.target.value))}
+                    className="input-base"
+                    required
+                  />
+                </InputWrap>
               </div>
-            </InputWrap>
 
-            <button
-              type="submit"
-              disabled={submitting || qty < 1}
-              className="btn-primary mt-2"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Menyimpan...
-                </>
-              ) : (
-                <>
-                  <ShoppingBag className="h-4 w-4" />
-                  Submit Transaksi
-                </>
-              )}
-            </button>
-          </form>
-        ) : (
-          <form className="space-y-3" onSubmit={onSubmitExpense}>
-            <InputWrap label="Tanggal Transaksi">
-              <input
-                type="datetime-local"
-                value={expenseDate}
-                onChange={(event) => setExpenseDate(event.target.value)}
-                className="input-base"
-                required
-              />
-            </InputWrap>
+              <InputWrap label="Total Harga">
+                <input
+                  value={currency(saleTotal)}
+                  readOnly
+                  className="input-base bg-muted text-lg font-semibold text-primary"
+                />
+              </InputWrap>
 
-            <InputWrap label="Item Pembelian">
-              <input
-                type="text"
-                value={expenseItem}
-                onChange={(event) => setExpenseItem(event.target.value)}
-                className="input-base"
-                placeholder="Deskripsi pengeluaran/pembelian"
-                required
-              />
-            </InputWrap>
+              <InputWrap label="Nama pembeli (opsional)">
+                <input
+                  type="text"
+                  value={buyerName}
+                  onChange={(event) => setBuyerName(event.target.value)}
+                  className="input-base"
+                  placeholder="Nama pembeli"
+                />
+              </InputWrap>
 
-            <div className="grid grid-cols-2 gap-3">
-              <InputWrap label="Harga">
+              <InputWrap label="Status Pembayaran">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSaleStatus("lunas")}
+                    className={`flex-1 rounded-lg py-2.5 text-xs font-semibold transition-all ${
+                      saleStatus === "lunas"
+                        ? "bg-emerald-500 text-white shadow-sm ring-2 ring-emerald-500/30"
+                        : "bg-muted text-muted-foreground hover:bg-emerald-50"
+                    }`}
+                  >
+                    ✓ Lunas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaleStatus("belum_bayar")}
+                    className={`flex-1 rounded-lg py-2.5 text-xs font-semibold transition-all ${
+                      saleStatus === "belum_bayar"
+                        ? "bg-orange-500 text-white shadow-sm ring-2 ring-orange-500/30"
+                        : "bg-muted text-muted-foreground hover:bg-orange-50"
+                    }`}
+                  >
+                    Belum Bayar
+                  </button>
+                </div>
+              </InputWrap>
+
+              <button
+                type="submit"
+                disabled={submitting || qty < 1}
+                className="btn-primary mt-2"
+              >
+                {submitting
+                  ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Menyimpan...
+                    </>
+                  )
+                  : (
+                    <>
+                      <ShoppingBag className="h-4 w-4" />
+                      Submit Transaksi
+                    </>
+                  )}
+              </button>
+            </form>
+          )
+          : (
+            <form className="space-y-3" onSubmit={onSubmitExpense}>
+              <InputWrap label="Tanggal Transaksi">
+                <input
+                  type="datetime-local"
+                  value={expenseDate}
+                  onChange={(event) => setExpenseDate(event.target.value)}
+                  className="input-base"
+                  required
+                />
+              </InputWrap>
+
+              <InputWrap label="Item Pembelian">
+                <input
+                  type="text"
+                  value={expenseItem}
+                  onChange={(event) => setExpenseItem(event.target.value)}
+                  className="input-base"
+                  placeholder="Deskripsi pengeluaran/pembelian"
+                  required
+                />
+              </InputWrap>
+
+              <div className="grid grid-cols-2 gap-3">
+                <InputWrap label="Harga">
+                  <input
+                    type="number"
+                    value={expensePrice}
+                    onChange={(event) => setExpensePrice(event.target.value)}
+                    className="input-base"
+                    placeholder="0"
+                    min={0}
+                    required
+                  />
+                </InputWrap>
+
+                <InputWrap label="Qty">
+                  <input
+                    type="number"
+                    min={1}
+                    value={expenseQty}
+                    onChange={(event) =>
+                      setExpenseQty(Number(event.target.value))}
+                    className="input-base"
+                    required
+                  />
+                </InputWrap>
+              </div>
+
+              <InputWrap label="Biaya Lain (Ongkir, dll)">
                 <input
                   type="number"
-                  value={expensePrice}
-                  onChange={(event) => setExpensePrice(event.target.value)}
+                  value={expenseOtherCost}
+                  onChange={(event) => setExpenseOtherCost(event.target.value)}
                   className="input-base"
                   placeholder="0"
                   min={0}
-                  required
                 />
               </InputWrap>
 
-              <InputWrap label="Qty">
+              <InputWrap label="Total">
                 <input
-                  type="number"
-                  min={1}
-                  value={expenseQty}
-                  onChange={(event) => setExpenseQty(Number(event.target.value))}
-                  className="input-base"
-                  required
+                  value={currency(expenseTotal)}
+                  readOnly
+                  className="input-base bg-muted text-lg font-semibold text-red-600"
                 />
               </InputWrap>
-            </div>
 
-            <InputWrap label="Biaya Lain (Ongkir, dll)">
-              <input
-                type="number"
-                value={expenseOtherCost}
-                onChange={(event) => setExpenseOtherCost(event.target.value)}
-                className="input-base"
-                placeholder="0"
-                min={0}
-              />
-            </InputWrap>
+              <InputWrap label="Keterangan (Opsional)">
+                <textarea
+                  value={expenseNote}
+                  onChange={(event) => setExpenseNote(event.target.value)}
+                  className="input-base h-20 resize-none"
+                  placeholder="Catatan tambahan..."
+                />
+              </InputWrap>
 
-            <InputWrap label="Total">
-              <input value={currency(expenseTotal)} readOnly className="input-base bg-muted text-lg font-semibold text-red-600" />
-            </InputWrap>
-
-            <InputWrap label="Keterangan (Opsional)">
-              <textarea
-                value={expenseNote}
-                onChange={(event) => setExpenseNote(event.target.value)}
-                className="input-base h-20 resize-none"
-                placeholder="Catatan tambahan..."
-              />
-            </InputWrap>
-
-            <button
-              type="submit"
-              disabled={submittingExpense || !expenseItem || !expensePrice || Number(expensePrice) < 0 || Number(expenseQty) < 1}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition active:scale-[0.98] disabled:opacity-70"
-            >
-              {submittingExpense ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Menyimpan...
-                </>
-              ) : (
-                <>
-                  <ShoppingBag className="h-4 w-4" />
-                  Submit Pengeluaran
-                </>
-              )}
-            </button>
-          </form>
-        )}
+              <button
+                type="submit"
+                disabled={submittingExpense || !expenseItem || !expensePrice ||
+                  Number(expensePrice) < 0 || Number(expenseQty) < 1}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition active:scale-[0.98] disabled:opacity-70"
+              >
+                {submittingExpense
+                  ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Menyimpan...
+                    </>
+                  )
+                  : (
+                    <>
+                      <ShoppingBag className="h-4 w-4" />
+                      Submit Pengeluaran
+                    </>
+                  )}
+              </button>
+            </form>
+          )}
       </motion.div>
 
       {/* Modal / Capital Input Card */}
-      <motion.div variants={fadeInUp} className="card p-4 border-l-4 border-l-amber-400 bg-gradient-to-r from-amber-50/50 to-transparent">
+      <motion.div
+        variants={fadeInUp}
+        className="card p-4 border-l-4 border-l-amber-400 bg-gradient-to-r from-amber-50/50 to-transparent"
+      >
         <div className="mb-3 flex items-center gap-2">
           <div className="rounded-lg bg-amber-100 p-1.5 text-amber-600">
             <Wallet className="h-4 w-4" />
           </div>
-          <h3 className="font-semibold text-amber-900">Input Modal / Dana Awal</h3>
+          <h3 className="font-semibold text-amber-900">
+            Input Modal / Dana Awal
+          </h3>
         </div>
         <form onSubmit={onSubmitModal} className="space-y-3">
           <InputWrap label="Tanggal">
@@ -1940,17 +2257,19 @@ function ShopSection({
             disabled={submittingModal}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-gray-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/80 active:scale-[0.98] disabled:opacity-70"
           >
-            {submittingModal ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Menyimpan...
-              </>
-            ) : (
-              <>
-                <Check className="h-4 w-4" />
-                Simpan Modal
-              </>
-            )}
+            {submittingModal
+              ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Menyimpan...
+                </>
+              )
+              : (
+                <>
+                  <Check className="h-4 w-4" />
+                  Simpan Modal
+                </>
+              )}
           </button>
         </form>
       </motion.div>
@@ -2000,41 +2319,53 @@ function StockSection({
   const passthroughLoader = ({ src }: { src: string }) => src;
 
   return (
-    <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
-      <motion.div variants={fadeInUp} className="flex items-center justify-between">
+    <motion.section
+      variants={staggerContainer}
+      initial="initial"
+      animate="animate"
+      className="space-y-4"
+    >
+      <motion.div
+        variants={fadeInUp}
+        className="flex items-center justify-between"
+      >
         <div>
           <h2 className="text-lg font-semibold text-foreground">Stok Barang</h2>
-          <span className="text-xs text-muted-foreground">{stockItems.length} item tersimpan</span>
+          <span className="text-xs text-muted-foreground">
+            {stockItems.length} item tersimpan
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          {!deleteMode ? (
-            <>
+          {!deleteMode
+            ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setDeleteMode(true)}
+                  className="flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onAddItem}
+                  className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-primary/90"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Tambah
+                </button>
+              </>
+            )
+            : (
               <button
                 type="button"
-                onClick={() => setDeleteMode(true)}
-                className="flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+                onClick={exitDeleteMode}
+                className="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-xs font-semibold text-secondary-foreground transition hover:bg-secondary/80"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5" />
+                Batal
               </button>
-              <button
-                type="button"
-                onClick={onAddItem}
-                className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-primary/90"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Tambah
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={exitDeleteMode}
-              className="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-xs font-semibold text-secondary-foreground transition hover:bg-secondary/80"
-            >
-              <X className="h-3.5 w-3.5" />
-              Batal
-            </button>
-          )}
+            )}
         </div>
       </motion.div>
 
@@ -2052,38 +2383,50 @@ function StockSection({
               onClick={() => deleteMode && toggleDeleteSelection(item.id)}
             >
               {deleteMode && (
-                <div className={`delete-checkbox ${isSelected ? "checked" : ""}`}>
-                  {isSelected && <Check className="h-3 w-3 text-white" strokeWidth={4} />}
+                <div
+                  className={`delete-checkbox ${isSelected ? "checked" : ""}`}
+                >
+                  {isSelected && (
+                    <Check className="h-3 w-3 text-white" strokeWidth={4} />
+                  )}
                 </div>
               )}
 
               <div className="aspect-square overflow-hidden bg-muted">
-                {item.image_url ? (
-                  <Image
-                    loader={passthroughLoader}
-                    unoptimized
-                    src={item.image_url}
-                    alt={item.name}
-                    width={200}
-                    height={200}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-secondary to-muted">
-                    <Package className="h-10 w-10 text-muted-foreground/40" />
-                  </div>
-                )}
+                {item.image_url
+                  ? (
+                    <Image
+                      loader={passthroughLoader}
+                      unoptimized
+                      src={item.image_url}
+                      alt={item.name}
+                      width={200}
+                      height={200}
+                      className="h-full w-full object-cover"
+                    />
+                  )
+                  : (
+                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-secondary to-muted">
+                      <Package className="h-10 w-10 text-muted-foreground/40" />
+                    </div>
+                  )}
                 {deleteMode && <div className="delete-overlay" />}
               </div>
               <div className="p-3">
-                <h3 className="truncate text-sm font-medium text-foreground">{item.name}</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">{currency(item.price)}</p>
+                <h3 className="truncate text-sm font-medium text-foreground">
+                  {item.name}
+                </h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {currency(item.price)}
+                </p>
                 <div className="mt-2 flex items-center justify-between">
-                  <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${
-                    item.stock <= LOW_STOCK_THRESHOLD
-                      ? "bg-red-100 text-red-600"
-                      : "bg-sky-100 text-sky-600"
-                  }`}>
+                  <span
+                    className={`rounded-md px-2 py-0.5 text-xs font-medium ${
+                      item.stock <= LOW_STOCK_THRESHOLD
+                        ? "bg-red-100 text-red-600"
+                        : "bg-sky-100 text-sky-600"
+                    }`}
+                  >
                     Stok: {item.stock}
                   </span>
                 </div>
@@ -2110,11 +2453,9 @@ function StockSection({
                             : "btn-secondary"
                         }`}
                       >
-                        {editingPriceId === item.id ? (
-                          <X className="mx-auto h-3 w-3" />
-                        ) : (
-                          <Pencil className="mx-auto h-3 w-3" />
-                        )}
+                        {editingPriceId === item.id
+                          ? <X className="mx-auto h-3 w-3" />
+                          : <Pencil className="mx-auto h-3 w-3" />}
                       </button>
 
                       <button
@@ -2136,11 +2477,9 @@ function StockSection({
                             : "btn-secondary"
                         }`}
                       >
-                        {editingStockId === item.id ? (
-                          <X className="mx-auto h-3 w-3" />
-                        ) : (
-                          <Plus className="mx-auto h-3 w-3" />
-                        )}
+                        {editingStockId === item.id
+                          ? <X className="mx-auto h-3 w-3" />
+                          : <Plus className="mx-auto h-3 w-3" />}
                       </button>
                     </div>
 
@@ -2155,7 +2494,8 @@ function StockSection({
                         >
                           <input
                             value={priceInput}
-                            onChange={(event) => setPriceInput(event.target.value)}
+                            onChange={(event) =>
+                              setPriceInput(event.target.value)}
                             type="number"
                             min={0}
                             className="input-base flex-1 py-1.5 text-xs"
@@ -2181,7 +2521,8 @@ function StockSection({
                         >
                           <input
                             value={addStockInput}
-                            onChange={(event) => setAddStockInput(event.target.value)}
+                            onChange={(event) =>
+                              setAddStockInput(event.target.value)}
                             type="number"
                             min={0}
                             className="input-base flex-1 py-1.5 text-xs"
@@ -2258,20 +2599,34 @@ function IncomeSection({
   setToDate: (date: string) => void;
   onExportPdf: () => void;
   onExportExcel: () => void;
-  onUpdateSale: (id: number, data: { qty?: number; buyer_name?: string | null; status?: "lunas" | "belum_bayar" }) => Promise<void>;
+  onUpdateSale: (
+    id: number,
+    data: {
+      qty?: number;
+      buyer_name?: string | null;
+      status?: "lunas" | "belum_bayar";
+    },
+  ) => Promise<void>;
   onDeleteSale: (id: number) => Promise<void>;
-  onUpdateExpense: (id: number, data: { description: string; total_cost: number; bought_at: string }) => Promise<void>;
+  onUpdateExpense: (
+    id: number,
+    data: { description: string; total_cost: number; bought_at: string },
+  ) => Promise<void>;
   onDeleteExpense: (id: number) => Promise<void>;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "lunas" | "belum_bayar">("all");
-  
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "lunas" | "belum_bayar"
+  >("all");
+
   // Sale States
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editQty, setEditQty] = useState(0);
   const [editBuyer, setEditBuyer] = useState("");
-  const [editStatus, setEditStatus] = useState<"lunas" | "belum_bayar">("lunas");
+  const [editStatus, setEditStatus] = useState<"lunas" | "belum_bayar">(
+    "lunas",
+  );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteSale, setConfirmDeleteSale] = useState(false);
@@ -2313,7 +2668,9 @@ function IncomeSection({
         stockItemId: null as number | null,
       })),
     ];
-    return combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return combined.sort((a, b) =>
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
   }, [sales, expenses]);
 
   const filteredTransactions = useMemo(() => {
@@ -2330,7 +2687,7 @@ function IncomeSection({
       result = result.filter(
         (t) =>
           t.name.toLowerCase().includes(q) ||
-          (t.detail && t.detail.toLowerCase().includes(q))
+          (t.detail && t.detail.toLowerCase().includes(q)),
       );
     }
 
@@ -2393,7 +2750,12 @@ function IncomeSection({
     setEditExpenseDesc(selectedExpense.description ?? "");
     setEditExpenseCost(String(selectedExpense.total_cost));
     const d = new Date(selectedExpense.bought_at);
-    setEditExpenseDate(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+    setEditExpenseDate(
+      new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(
+        0,
+        16,
+      ),
+    );
     setIsEditingExpense(true);
   };
 
@@ -2429,30 +2791,56 @@ function IncomeSection({
     return item?.image_url ?? null;
   };
 
-  const filterButtons: { key: "all" | "lunas" | "belum_bayar"; label: string }[] = [
+  const filterButtons: {
+    key: "all" | "lunas" | "belum_bayar";
+    label: string;
+  }[] = [
     { key: "all", label: "Semua" },
     { key: "lunas", label: "Lunas" },
     { key: "belum_bayar", label: "Belum Bayar" },
   ];
 
   return (
-    <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-3">
+    <motion.section
+      variants={staggerContainer}
+      initial="initial"
+      animate="animate"
+      className="space-y-3"
+    >
       <motion.div variants={fadeInUp} className="card p-3">
         <div className="grid grid-cols-2 gap-2">
           <InputWrap label="Dari">
-            <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="input-base py-2 text-xs" />
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(event) => setFromDate(event.target.value)}
+              className="input-base py-2 text-xs"
+            />
           </InputWrap>
           <InputWrap label="Sampai">
-            <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="input-base py-2 text-xs" />
+            <input
+              type="date"
+              value={toDate}
+              onChange={(event) => setToDate(event.target.value)}
+              className="input-base py-2 text-xs"
+            />
           </InputWrap>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <button type="button" onClick={onExportPdf} className="btn-primary py-2 text-xs">
+          <button
+            type="button"
+            onClick={onExportPdf}
+            className="btn-primary py-2 text-xs"
+          >
             <FileDown className="h-3.5 w-3.5" />
             PDF
           </button>
-          <button type="button" onClick={onExportExcel} className="btn-secondary py-2 text-xs">
+          <button
+            type="button"
+            onClick={onExportExcel}
+            className="btn-secondary py-2 text-xs"
+          >
             <FileSpreadsheet className="h-3.5 w-3.5" />
             Excel
           </button>
@@ -2482,8 +2870,8 @@ function IncomeSection({
                   ? fb.key === "lunas"
                     ? "bg-emerald-600 text-white"
                     : fb.key === "belum_bayar"
-                      ? "bg-orange-500 text-white"
-                      : "bg-primary text-primary-foreground"
+                    ? "bg-orange-500 text-white"
+                    : "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground hover:bg-muted/80"
               }`}
             >
@@ -2514,9 +2902,23 @@ function IncomeSection({
                   onClick={() => openDetail(item)}
                 >
                   <td className="px-2 py-2">
-                    <div className={`font-medium ${item.name === "Modal / Dana Awal" ? "text-orange-600" : "text-foreground"}`}>{item.name}</div>
+                    <div
+                      className={`font-medium ${
+                        item.name === "Modal / Dana Awal"
+                          ? "text-orange-600"
+                          : "text-foreground"
+                      }`}
+                    >
+                      {item.name}
+                    </div>
                     <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <span className={item.type === "expense" ? "text-red-500/70" : item.name === "Modal / Dana Awal" ? "text-orange-500/70" : ""}>
+                      <span
+                        className={item.type === "expense"
+                          ? "text-red-500/70"
+                          : item.name === "Modal / Dana Awal"
+                          ? "text-orange-500/70"
+                          : ""}
+                      >
                         {format(new Date(item.date), "dd/MM HH:mm")}
                       </span>
                       {item.detail && (
@@ -2544,21 +2946,28 @@ function IncomeSection({
                       )}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-center text-muted-foreground">{item.qty ?? "-"}</td>
-                  <td className={`px-2 py-2 text-right font-medium ${
-                    item.type === "expense" 
-                      ? "text-red-600" 
-                      : item.name === "Modal / Dana Awal" 
-                        ? "text-orange-600" 
+                  <td className="px-2 py-2 text-center text-muted-foreground">
+                    {item.qty ?? "-"}
+                  </td>
+                  <td
+                    className={`px-2 py-2 text-right font-medium ${
+                      item.type === "expense"
+                        ? "text-red-600"
+                        : item.name === "Modal / Dana Awal"
+                        ? "text-orange-600"
                         : "text-primary"
-                  }`}>
+                    }`}
+                  >
                     {currency(item.amount)}
                   </td>
                 </motion.tr>
               ))}
               {filteredTransactions.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">
+                  <td
+                    colSpan={3}
+                    className="px-3 py-8 text-center text-muted-foreground"
+                  >
                     Belum ada transaksi di rentang tanggal ini.
                   </td>
                 </tr>
@@ -2576,7 +2985,10 @@ function IncomeSection({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-            onClick={() => { setSelectedSale(null); setIsEditing(false); }}
+            onClick={() => {
+              setSelectedSale(null);
+              setIsEditing(false);
+            }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -2588,21 +3000,26 @@ function IncomeSection({
             >
               {/* Image Header */}
               <div className="relative h-40 w-full bg-muted">
-                {getItemImage(selectedSale.stock_item_id) ? (
-                  <Image
-                    src={getItemImage(selectedSale.stock_item_id)!}
-                    alt={selectedSale.item_name}
-                    fill
-                    className="object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center">
-                    <ImageIcon className="h-12 w-12 text-muted-foreground/40" />
-                  </div>
-                )}
+                {getItemImage(selectedSale.stock_item_id)
+                  ? (
+                    <Image
+                      src={getItemImage(selectedSale.stock_item_id)!}
+                      alt={selectedSale.item_name}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  )
+                  : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <ImageIcon className="h-12 w-12 text-muted-foreground/40" />
+                    </div>
+                  )}
                 <button
-                  onClick={() => { setSelectedSale(null); setIsEditing(false); }}
+                  onClick={() => {
+                    setSelectedSale(null);
+                    setIsEditing(false);
+                  }}
                   className="absolute right-2 top-2 rounded-full bg-black/40 p-1.5 text-white transition hover:bg-black/60"
                 >
                   <X className="h-4 w-4" />
@@ -2611,105 +3028,139 @@ function IncomeSection({
 
               {/* Detail Content */}
               <div className="space-y-3 p-4">
-                <h3 className="text-base font-semibold text-foreground">{selectedSale.item_name}</h3>
+                <h3 className="text-base font-semibold text-foreground">
+                  {selectedSale.item_name}
+                </h3>
 
-                {!isEditing ? (
-                  /* View Mode */
-                  <div className="space-y-2.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Tanggal</span>
-                      <span className="font-medium">{format(new Date(selectedSale.sold_at), "dd MMM yyyy, HH:mm")}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Qty</span>
-                      <span className="font-medium">{selectedSale.qty}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Harga Satuan</span>
-                      <span className="font-medium">{currency(selectedSale.unit_price)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total Harga</span>
-                      <span className="font-semibold text-primary">{currency(selectedSale.total_price)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Pembeli</span>
-                      <span className="font-medium">{selectedSale.buyer_name || "-"}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Status</span>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
-                          selectedSale.status === "lunas"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-orange-100 text-orange-700"
-                        }`}
-                      >
-                        {selectedSale.status === "lunas" ? "Lunas" : "Belum Bayar"}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  /* Edit Mode */
-                  <div className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Tanggal</span>
-                      <span className="font-medium">{format(new Date(selectedSale.sold_at), "dd MMM yyyy, HH:mm")}</span>
-                    </div>
-                    <InputWrap label="Qty">
-                      <input
-                        type="number"
-                        min={1}
-                        value={editQty}
-                        onChange={(e) => setEditQty(Number(e.target.value))}
-                        className="input-base w-full py-2 text-xs"
-                      />
-                    </InputWrap>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Harga Satuan</span>
-                      <span className="font-medium">{currency(selectedSale.unit_price)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Total Harga</span>
-                      <span className="font-semibold text-primary">{currency(selectedSale.unit_price * editQty)}</span>
-                    </div>
-                    <InputWrap label="Nama Pembeli">
-                      <input
-                        type="text"
-                        value={editBuyer}
-                        onChange={(e) => setEditBuyer(e.target.value)}
-                        className="input-base w-full py-2 text-xs"
-                        placeholder="Nama pembeli..."
-                      />
-                    </InputWrap>
-                    <InputWrap label="Status Pembayaran">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditStatus("lunas")}
-                          className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
-                            editStatus === "lunas"
-                              ? "bg-emerald-600 text-white"
-                              : "bg-muted text-muted-foreground hover:bg-muted/80"
-                          }`}
-                        >
-                          Lunas
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditStatus("belum_bayar")}
-                          className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
-                            editStatus === "belum_bayar"
-                              ? "bg-orange-500 text-white"
-                              : "bg-muted text-muted-foreground hover:bg-muted/80"
-                          }`}
-                        >
-                          Belum Bayar
-                        </button>
+                {!isEditing
+                  ? (
+                    /* View Mode */
+                    <div className="space-y-2.5 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Tanggal</span>
+                        <span className="font-medium">
+                          {format(
+                            new Date(selectedSale.sold_at),
+                            "dd MMM yyyy, HH:mm",
+                          )}
+                        </span>
                       </div>
-                    </InputWrap>
-                  </div>
-                )}
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Qty</span>
+                        <span className="font-medium">{selectedSale.qty}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          Harga Satuan
+                        </span>
+                        <span className="font-medium">
+                          {currency(selectedSale.unit_price)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          Total Harga
+                        </span>
+                        <span className="font-semibold text-primary">
+                          {currency(selectedSale.total_price)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Pembeli</span>
+                        <span className="font-medium">
+                          {selectedSale.buyer_name || "-"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Status</span>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                            selectedSale.status === "lunas"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-orange-100 text-orange-700"
+                          }`}
+                        >
+                          {selectedSale.status === "lunas"
+                            ? "Lunas"
+                            : "Belum Bayar"}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                  : (
+                    /* Edit Mode */
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Tanggal</span>
+                        <span className="font-medium">
+                          {format(
+                            new Date(selectedSale.sold_at),
+                            "dd MMM yyyy, HH:mm",
+                          )}
+                        </span>
+                      </div>
+                      <InputWrap label="Qty">
+                        <input
+                          type="number"
+                          min={1}
+                          value={editQty}
+                          onChange={(e) => setEditQty(Number(e.target.value))}
+                          className="input-base w-full py-2 text-xs"
+                        />
+                      </InputWrap>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Harga Satuan
+                        </span>
+                        <span className="font-medium">
+                          {currency(selectedSale.unit_price)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Total Harga
+                        </span>
+                        <span className="font-semibold text-primary">
+                          {currency(selectedSale.unit_price * editQty)}
+                        </span>
+                      </div>
+                      <InputWrap label="Nama Pembeli">
+                        <input
+                          type="text"
+                          value={editBuyer}
+                          onChange={(e) => setEditBuyer(e.target.value)}
+                          className="input-base w-full py-2 text-xs"
+                          placeholder="Nama pembeli..."
+                        />
+                      </InputWrap>
+                      <InputWrap label="Status Pembayaran">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditStatus("lunas")}
+                            className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+                              editStatus === "lunas"
+                                ? "bg-emerald-600 text-white"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                            }`}
+                          >
+                            Lunas
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditStatus("belum_bayar")}
+                            className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+                              editStatus === "belum_bayar"
+                                ? "bg-orange-500 text-white"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                            }`}
+                          >
+                            Belum Bayar
+                          </button>
+                        </div>
+                      </InputWrap>
+                    </div>
+                  )}
 
                 {/* Action Buttons */}
                 <div className="space-y-2 pt-1">
@@ -2719,7 +3170,9 @@ function IncomeSection({
                       animate={{ opacity: 1, y: 0 }}
                       className="rounded-xl bg-red-50 p-3 text-center"
                     >
-                      <p className="text-xs font-medium text-red-700">Yakin hapus transaksi ini?</p>
+                      <p className="text-xs font-medium text-red-700">
+                        Yakin hapus transaksi ini?
+                      </p>
                       <div className="mt-2 flex gap-2">
                         <button
                           type="button"
@@ -2740,46 +3193,52 @@ function IncomeSection({
                     </motion.div>
                   )}
                   <div className="flex gap-2">
-                  {!isEditing ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={startEditing}
-                        className="btn-primary flex-1 py-2.5 text-xs"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleDelete}
-                        disabled={deleting}
-                        className="flex aspect-square h-full items-center justify-center rounded-xl bg-red-500 text-white transition hover:bg-red-600 disabled:opacity-50"
-                        style={{ minWidth: '40px' }}
-                      >
-                        {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setIsEditing(false)}
-                        className="btn-secondary flex-1 py-2.5 text-xs"
-                      >
-                        Batal
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="btn-primary flex-1 py-2.5 text-xs"
-                      >
-                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                        {saving ? "Menyimpan..." : "Simpan"}
-                      </button>
-                    </>
-                  )}
+                    {!isEditing
+                      ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={startEditing}
+                            className="btn-primary flex-1 py-2.5 text-xs"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDelete}
+                            disabled={deleting}
+                            className="flex aspect-square h-full items-center justify-center rounded-xl bg-red-500 text-white transition hover:bg-red-600 disabled:opacity-50"
+                            style={{ minWidth: "40px" }}
+                          >
+                            {deleting
+                              ? <Loader2 className="h-4 w-4 animate-spin" />
+                              : <Trash2 className="h-4 w-4" />}
+                          </button>
+                        </>
+                      )
+                      : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditing(false)}
+                            className="btn-secondary flex-1 py-2.5 text-xs"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="btn-primary flex-1 py-2.5 text-xs"
+                          >
+                            {saving
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Check className="h-3.5 w-3.5" />}
+                            {saving ? "Menyimpan..." : "Simpan"}
+                          </button>
+                        </>
+                      )}
                   </div>
                 </div>
               </div>
@@ -2796,7 +3255,10 @@ function IncomeSection({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-            onClick={() => { setSelectedExpense(null); setIsEditingExpense(false); }}
+            onClick={() => {
+              setSelectedExpense(null);
+              setIsEditingExpense(false);
+            }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -2812,7 +3274,10 @@ function IncomeSection({
                   <h3 className="font-semibold">Detail Pengeluaran</h3>
                 </div>
                 <button
-                  onClick={() => { setSelectedExpense(null); setIsEditingExpense(false); }}
+                  onClick={() => {
+                    setSelectedExpense(null);
+                    setIsEditingExpense(false);
+                  }}
                   className="rounded-full bg-white p-1 text-red-500 shadow-sm transition hover:bg-red-100"
                 >
                   <X className="h-4 w-4" />
@@ -2820,50 +3285,65 @@ function IncomeSection({
               </div>
 
               <div className="space-y-4 p-4">
-                {!isEditingExpense ? (
-                  <div className="space-y-3 text-sm">
-                    <div>
-                      <span className="text-xs text-muted-foreground block mb-1">Deskripsi</span>
-                      <p className="font-medium text-base">{selectedExpense.description || "Pengeluaran"}</p>
+                {!isEditingExpense
+                  ? (
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <span className="text-xs text-muted-foreground block mb-1">
+                          Deskripsi
+                        </span>
+                        <p className="font-medium text-base">
+                          {selectedExpense.description || "Pengeluaran"}
+                        </p>
+                      </div>
+                      <div className="flex justify-between border-t border-border pt-3">
+                        <span className="text-muted-foreground">Tanggal</span>
+                        <span className="font-medium">
+                          {format(
+                            new Date(selectedExpense.bought_at),
+                            "dd MMM yyyy, HH:mm",
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          Total Biaya
+                        </span>
+                        <span className="font-bold text-red-600 text-lg">
+                          {currency(selectedExpense.total_cost)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex justify-between border-t border-border pt-3">
-                      <span className="text-muted-foreground">Tanggal</span>
-                      <span className="font-medium">{format(new Date(selectedExpense.bought_at), "dd MMM yyyy, HH:mm")}</span>
+                  )
+                  : (
+                    <div className="space-y-3">
+                      <InputWrap label="Tanggal">
+                        <input
+                          type="datetime-local"
+                          value={editExpenseDate}
+                          onChange={(e) => setEditExpenseDate(e.target.value)}
+                          className="input-base"
+                        />
+                      </InputWrap>
+                      <InputWrap label="Deskripsi">
+                        <input
+                          type="text"
+                          value={editExpenseDesc}
+                          onChange={(e) => setEditExpenseDesc(e.target.value)}
+                          className="input-base"
+                        />
+                      </InputWrap>
+                      <InputWrap label="Total Biaya">
+                        <input
+                          type="number"
+                          min={0}
+                          value={editExpenseCost}
+                          onChange={(e) => setEditExpenseCost(e.target.value)}
+                          className="input-base"
+                        />
+                      </InputWrap>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total Biaya</span>
-                      <span className="font-bold text-red-600 text-lg">{currency(selectedExpense.total_cost)}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <InputWrap label="Tanggal">
-                      <input
-                        type="datetime-local"
-                        value={editExpenseDate}
-                        onChange={(e) => setEditExpenseDate(e.target.value)}
-                        className="input-base"
-                      />
-                    </InputWrap>
-                    <InputWrap label="Deskripsi">
-                      <input
-                        type="text"
-                        value={editExpenseDesc}
-                        onChange={(e) => setEditExpenseDesc(e.target.value)}
-                        className="input-base"
-                      />
-                    </InputWrap>
-                    <InputWrap label="Total Biaya">
-                      <input
-                        type="number"
-                        min={0}
-                        value={editExpenseCost}
-                        onChange={(e) => setEditExpenseCost(e.target.value)}
-                        className="input-base"
-                      />
-                    </InputWrap>
-                  </div>
-                )}
+                  )}
 
                 {/* Actions */}
                 <div className="pt-2">
@@ -2873,7 +3353,9 @@ function IncomeSection({
                       animate={{ opacity: 1, y: 0 }}
                       className="mb-3 rounded-xl bg-red-50 p-3 text-center"
                     >
-                      <p className="text-xs font-medium text-red-700">Hapus pengeluaran ini?</p>
+                      <p className="text-xs font-medium text-red-700">
+                        Hapus pengeluaran ini?
+                      </p>
                       <div className="mt-2 flex gap-2">
                         <button
                           type="button"
@@ -2895,46 +3377,52 @@ function IncomeSection({
                   )}
 
                   <div className="flex gap-2">
-                    {!isEditingExpense ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={startEditingExpense}
-                          className="btn-secondary flex-1 py-2.5 text-xs bg-muted hover:bg-muted/80"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleDeleteExpenseClick}
-                          disabled={deleting}
-                          className="flex aspect-square h-full items-center justify-center rounded-xl border border-red-200 text-red-500 transition hover:bg-red-50 disabled:opacity-50"
-                          style={{ minWidth: '40px' }}
-                        >
-                          {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setIsEditingExpense(false)}
-                          className="btn-secondary flex-1 py-2.5 text-xs"
-                        >
-                          Batal
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSaveExpense}
-                          disabled={saving}
-                          className="btn-primary flex-1 py-2.5 text-xs"
-                        >
-                          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                          Simpan
-                        </button>
-                      </>
-                    )}
+                    {!isEditingExpense
+                      ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={startEditingExpense}
+                            className="btn-secondary flex-1 py-2.5 text-xs bg-muted hover:bg-muted/80"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDeleteExpenseClick}
+                            disabled={deleting}
+                            className="flex aspect-square h-full items-center justify-center rounded-xl border border-red-200 text-red-500 transition hover:bg-red-50 disabled:opacity-50"
+                            style={{ minWidth: "40px" }}
+                          >
+                            {deleting
+                              ? <Loader2 className="h-4 w-4 animate-spin" />
+                              : <Trash2 className="h-4 w-4" />}
+                          </button>
+                        </>
+                      )
+                      : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingExpense(false)}
+                            className="btn-secondary flex-1 py-2.5 text-xs"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveExpense}
+                            disabled={saving}
+                            className="btn-primary flex-1 py-2.5 text-xs"
+                          >
+                            {saving
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Check className="h-3.5 w-3.5" />}
+                            Simpan
+                          </button>
+                        </>
+                      )}
                   </div>
                 </div>
               </div>
@@ -2953,7 +3441,9 @@ function AccountSection() {
   const [loggingOut, setLoggingOut] = useState(false);
 
   // Promo states
-  const [promoSlides, setPromoSlides] = useState<{ id: number; url: string; timestamp: number }[]>([]);
+  const [promoSlides, setPromoSlides] = useState<
+    { id: number; url: string; timestamp: number }[]
+  >([]);
   const [loadingPromos, setLoadingPromos] = useState(true);
   const [uploadingSlot, setUploadingSlot] = useState<number | null>(null);
 
@@ -2976,8 +3466,13 @@ function AccountSection() {
         .filter((f) => f.name.startsWith("promo_") && f.name.endsWith(".webp"))
         .map((f) => {
           const id = parseInt(f.name.split("_")[1]);
-          const { data: publicUrlData } = supabase.storage.from("promo").getPublicUrl(f.name);
-          return { id, url: publicUrlData.publicUrl, timestamp: new Date().getTime() };
+          const { data: publicUrlData } = supabase.storage.from("promo")
+            .getPublicUrl(f.name);
+          return {
+            id,
+            url: publicUrlData.publicUrl,
+            timestamp: new Date().getTime(),
+          };
         })
         .sort((a, b) => a.id - b.id);
       setPromoSlides(slides);
@@ -3029,11 +3524,16 @@ function AccountSection() {
   const handleLogout = async () => {
     setLoggingOut(true);
     await supabase.auth.signOut();
-    router.replace("/store");
+    router.replace("/");
   };
 
   return (
-    <motion.section variants={staggerContainer} initial="initial" animate="animate" className="space-y-6">
+    <motion.section
+      variants={staggerContainer}
+      initial="initial"
+      animate="animate"
+      className="space-y-6"
+    >
       {/* Header Profile */}
       <motion.div variants={fadeInUp} className="card p-4">
         <div className="flex items-center gap-4">
@@ -3042,7 +3542,9 @@ function AccountSection() {
           </div>
           <div>
             <h2 className="font-semibold text-foreground">Admin Shop</h2>
-            <p className="text-xs text-muted-foreground">kikstshop@example.com</p>
+            <p className="text-xs text-muted-foreground">
+              kikstshop@example.com
+            </p>
           </div>
         </div>
       </motion.div>
@@ -3062,61 +3564,68 @@ function AccountSection() {
           onChange={onFileChange}
         />
 
-        {loadingPromos ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {[1, 2, 3, 4].map((id) => {
-              const slide = promoSlides.find((s) => s.id === id);
-              const isUploading = uploadingSlot === id;
+        {loadingPromos
+          ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )
+          : (
+            <div className="grid grid-cols-2 gap-4">
+              {[1, 2, 3, 4].map((id) => {
+                const slide = promoSlides.find((s) => s.id === id);
+                const isUploading = uploadingSlot === id;
 
-              return (
-                <div
-                  key={id}
-                  className="group relative aspect-[21/11] overflow-hidden rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/30 transition hover:border-primary/50"
-                >
-                  {slide ? (
-                    <div className="relative h-full w-full">
-                      <Image
-                        src={`${slide.url}?t=${slide.timestamp}`}
-                        alt={`Slot ${id}`}
-                        fill
-                        className="object-cover"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                return (
+                  <div
+                    key={id}
+                    className="group relative aspect-[21/11] overflow-hidden rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/30 transition hover:border-primary/50"
+                  >
+                    {slide
+                      ? (
+                        <div className="relative h-full w-full">
+                          <Image
+                            src={`${slide.url}?t=${slide.timestamp}`}
+                            alt={`Slot ${id}`}
+                            fill
+                            className="object-cover"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                            <button
+                              onClick={() => handleFileSelect(id)}
+                              className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-primary shadow-sm hover:scale-105 active:scale-95"
+                            >
+                              Ganti Foto
+                            </button>
+                          </div>
+                        </div>
+                      )
+                      : (
                         <button
                           onClick={() => handleFileSelect(id)}
-                          className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-primary shadow-sm hover:scale-105 active:scale-95"
+                          className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary"
                         >
-                          Ganti Foto
+                          <Plus className="h-6 w-6" />
+                          <span className="text-[10px] font-medium uppercase tracking-wider">
+                            Slot {id}
+                          </span>
                         </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => handleFileSelect(id)}
-                      className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary"
-                    >
-                      <Plus className="h-6 w-6" />
-                      <span className="text-[10px] font-medium uppercase tracking-wider">Slot {id}</span>
-                    </button>
-                  )}
+                      )}
 
-                  {isUploading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    {isUploading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
         <p className="mt-4 text-[10px] text-muted-foreground">
-          * Format rasio 21:11 (Landscape). Maksimal 4 slide. Foto akan otomatis aktif di halaman depan.
+          * Format rasio 21:11 (Landscape). Maksimal 4 slide. Foto akan otomatis
+          aktif di halaman depan.
         </p>
       </motion.div>
 
@@ -3152,7 +3661,9 @@ function AccountSection() {
           disabled={loggingOut}
           className="flex w-full items-center justify-center gap-2 rounded-lg p-3 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50"
         >
-          {loggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+          {loggingOut
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : <LogOut className="h-4 w-4" />}
           {loggingOut ? "Keluar..." : "Keluar"}
         </button>
       </motion.div>
@@ -3182,7 +3693,11 @@ function MetricCard({
   };
 
   return (
-    <article className={`relative overflow-hidden rounded-xl bg-gradient-to-br ${gradients[variant]} p-3.5 shadow-lg transition-transform hover:scale-[1.02]`}>
+    <article
+      className={`relative overflow-hidden rounded-xl bg-gradient-to-br ${
+        gradients[variant]
+      } p-3.5 shadow-lg transition-transform hover:scale-[1.02]`}
+    >
       {/* Decorative circles */}
       <div className="absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
       <div className="absolute -bottom-4 -right-4 h-20 w-20 rounded-full bg-white/5" />
@@ -3194,7 +3709,9 @@ function MetricCard({
               <Icon className="h-3.5 w-3.5 text-white" />
             </div>
           )}
-          <p className="text-[10px] font-medium uppercase tracking-wide text-white/80">{label}</p>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-white/80">
+            {label}
+          </p>
         </div>
         <p className="mt-1.5 text-lg font-bold text-white">
           {value}
@@ -3204,10 +3721,14 @@ function MetricCard({
   );
 }
 
-function InputWrap({ label, children }: { label: string; children: React.ReactNode }) {
+function InputWrap(
+  { label, children }: { label: string; children: React.ReactNode },
+) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-medium text-muted-foreground">{label}</span>
+      <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
+        {label}
+      </span>
       {children}
     </label>
   );

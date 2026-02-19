@@ -1,9 +1,15 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { useRouter, usePathname } from "next/navigation";
-import type { User, Session } from "@supabase/supabase-js";
-import { supabase, hasSupabaseEnv } from "@/lib/supabase";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import { usePathname, useRouter } from "next/navigation";
+import type { Session, User } from "@supabase/supabase-js";
+import { hasSupabaseEnv, supabase } from "@/lib/supabase";
 
 interface AuthContextType {
   user: User | null;
@@ -64,7 +70,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (loading) return;
 
     const isLoginPage = pathname === "/login";
-    const isPublicPage = pathname === "/login" || pathname === "/store" || pathname === "/";
+    const isPublicPage = pathname === "/login" || pathname === "/store" ||
+      pathname === "/";
     const isAuthenticated = !!user;
 
     if (!isAuthenticated && !isPublicPage) {
@@ -76,7 +83,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
-    router.push("/store");
+    router.push("/");
   }, [router]);
 
   return (
