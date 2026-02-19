@@ -198,23 +198,25 @@ export default function StorePage() {
               <MessageCircle className="h-3.5 w-3.5" />
               Contact
             </button>
-            {user ? (
-              <button
-                onClick={signOut}
-                className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-primary transition hover:bg-white/90"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Logout
-              </button>
-            ) : (
-              <Link
-                href="/login"
-                className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-primary transition hover:bg-white/90"
-              >
-                <LogIn className="h-3.5 w-3.5" />
-                Login
-              </Link>
-            )}
+            {user
+              ? (
+                <button
+                  onClick={signOut}
+                  className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-primary transition hover:bg-white/90"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Logout
+                </button>
+              )
+              : (
+                <Link
+                  href="/login"
+                  className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-primary transition hover:bg-white/90"
+                >
+                  <LogIn className="h-3.5 w-3.5" />
+                  Login
+                </Link>
+              )}
           </div>
 
           {/* Mobile burger */}
@@ -265,27 +267,29 @@ export default function StorePage() {
                   Contact
                 </button>
                 <div className="mx-3 border-t border-border" />
-                {user ? (
-                  <button
-                    onClick={() => {
-                      signOut();
-                      setMenuOpen(false);
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted w-full text-left"
-                  >
-                    <LogOut className="h-4 w-4 text-primary" />
-                    Logout
-                  </button>
-                ) : (
-                  <Link
-                    href="/login"
-                    onClick={() => setMenuOpen(false)}
-                    className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted"
-                  >
-                    <LogIn className="h-4 w-4 text-primary" />
-                    Login Admin
-                  </Link>
-                )}
+                {user
+                  ? (
+                    <button
+                      onClick={() => {
+                        signOut();
+                        setMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted w-full text-left"
+                    >
+                      <LogOut className="h-4 w-4 text-primary" />
+                      Logout
+                    </button>
+                  )
+                  : (
+                    <Link
+                      href="/login"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted"
+                    >
+                      <LogIn className="h-4 w-4 text-primary" />
+                      Login Admin
+                    </Link>
+                  )}
               </div>
             </motion.div>
           </>
@@ -298,13 +302,6 @@ export default function StorePage() {
   from-emerald-900
   via-emerald-700
   to-emerald-600 px-4 pb-4 pt-5 sm:-mx-6 sm:px-6 rounded-b-3xl ">
-          {/* glow effect */}
-          <div className="
-    absolute -top-20 left-1/2 h-72 w-72 -translate-x-1/2
-    bg-emerald-400/30
-    blur-3xl
-    rounded-full
-  " />
           {/* ── Promo Slideshow ──────────────────── */}
           <div className="relative mb-6 overflow-hidden rounded-2xl">
             <div className="relative aspect-[21/11] sm:aspect-[3/1]">
