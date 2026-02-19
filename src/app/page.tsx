@@ -1,23 +1,25 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  Search,
-  Menu,
-  X,
-  MessageCircle,
-  LogIn,
-  Package,
-  Loader2,
-  Phone,
   ChevronLeft,
   ChevronRight,
+  Loader2,
+  LogIn,
+  LogOut,
+  Menu,
+  MessageCircle,
+  Package,
+  Phone,
+  Search,
+  X,
 } from "lucide-react";
-import { supabase, hasSupabaseEnv } from "@/lib/supabase";
+import { hasSupabaseEnv, supabase } from "@/lib/supabase";
 import { currency } from "@/lib/format";
+import { useAuth } from "@/components/AuthProvider";
 import type { StockItem } from "@/types/db";
 
 const passthroughLoader = ({ src }: { src: string }) => src;
@@ -36,14 +38,17 @@ const PLACEHOLDER_SLIDES = [
   },
 ];
 
-export default function HomePage() {
+export default function StorePage() {
   const [items, setItems] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const { user, signOut } = useAuth();
 
   // Slideshow
-  const [promoSlides, setPromoSlides] = useState<{ id: number; url: string }[]>([]);
+  const [promoSlides, setPromoSlides] = useState<{ id: number; url: string }[]>(
+    [],
+  );
   const [activeSlide, setActiveSlide] = useState(0);
   const slideTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -78,7 +83,11 @@ export default function HomePage() {
     loadItems();
     const channel = supabase
       .channel("public-store")
-      .on("postgres_changes", { event: "*", schema: "public", table: "stock_items" }, loadItems)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "stock_items",
+      }, loadItems)
       .subscribe();
 
     // Load promo slides
@@ -88,14 +97,17 @@ export default function HomePage() {
       const { data } = await supabase.storage.from("promo").list();
       if (data) {
         const slides = data
-          .filter((f) => f.name.startsWith("promo_") && f.name.endsWith(".webp"))
+          .filter((f) =>
+            f.name.startsWith("promo_") && f.name.endsWith(".webp")
+          )
           .map((f) => {
             const id = parseInt(f.name.split("_")[1]);
-            const { data: publicUrlData } = supabase.storage.from("promo").getPublicUrl(f.name);
+            const { data: publicUrlData } = supabase.storage.from("promo")
+              .getPublicUrl(f.name);
             return { id, url: publicUrlData.publicUrl };
           })
           .sort((a, b) => a.id - b.id);
-        
+
         // Cache bust mechanism could be added here if needed, but for now simple url
         setPromoSlides(slides);
       }
@@ -123,21 +135,24 @@ export default function HomePage() {
   }, [resetSlideTimer]);
 
   const goSlide = (dir: number) => {
-    setActiveSlide((prev) => (prev + dir + displaySlides.length) % displaySlides.length);
+    setActiveSlide((prev) =>
+      (prev + dir + displaySlides.length) % displaySlides.length
+    );
     resetSlideTimer();
   };
 
   /* ── Helpers ──────────────────────────────────── */
   const filteredItems = useMemo(
-    () => items.filter((i) => i.name.toLowerCase().includes(search.toLowerCase())),
+    () =>
+      items.filter((i) => i.name.toLowerCase().includes(search.toLowerCase())),
     [items, search],
   );
 
   const handleContactClick = (itemName = "") => {
     setMessage(
       itemName
-        ? `Halo, saya tertarik dengan item "${itemName}". Apakah masih tersedia?`
-        : "Halo, saya ingin bertanya seputar produk Kikstshop.",
+        ? `Halo, mau tanya item *_${itemName}_*. Apa masih tersedia?`
+        : "Halo, saya mau tanya item di KIKSTshop.",
     );
     setShowContactForm(true);
     setMenuOpen(false);
@@ -146,8 +161,11 @@ export default function HomePage() {
   const sendWhatsApp = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName || !message) return;
-    const text = `Halo, nama saya ${customerName}.\n\n${message}`;
-    window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`, "_blank");
+    const text = `Halo, saya *_${customerName}_*\n\n${message}`;
+    window.open(
+      `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`,
+      "_blank",
+    );
     setShowContactForm(false);
   };
 
@@ -155,18 +173,20 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-background pb-24">
       {/* ─── Header ─────────────────────────────── */}
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-primary text-primary-foreground shadow-md">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-emerald-900 text-primary-foreground shadow-md">
+        <div className="mx-auto flex h-18 max-w-5xl items-center justify-between px-4">
           {/* Logo + Name */}
           <div className="flex items-center gap-2.5">
             <Image
-              src="/kikstshop_icon.webp"
+              src="/kikstshop_logo.webp"
               alt="Logo"
-              width={32}
-              height={32}
-              className="h-8 w-8 rounded-full object-contain"
+              width={28}
+              height={28}
+              className="brightness-0 invert"
             />
-            <span className="text-base font-bold tracking-tight">KIKSTShop</span>
+            <span className="text-lg font-bold tracking-tight">
+              KIKST<span className="text-white font-light">Shop</span>
+            </span>
           </div>
 
           {/* Desktop buttons */}
@@ -178,13 +198,25 @@ export default function HomePage() {
               <MessageCircle className="h-3.5 w-3.5" />
               Contact
             </button>
-            <Link
-              href="/login"
-              className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-primary transition hover:bg-white/90"
-            >
-              <LogIn className="h-3.5 w-3.5" />
-              Login
-            </Link>
+            {user
+              ? (
+                <button
+                  onClick={signOut}
+                  className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-primary transition hover:bg-white/90"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Logout
+                </button>
+              )
+              : (
+                <Link
+                  href="/login"
+                  className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-primary transition hover:bg-white/90"
+                >
+                  <LogIn className="h-3.5 w-3.5" />
+                  Login
+                </Link>
+              )}
           </div>
 
           {/* Mobile burger */}
@@ -192,8 +224,16 @@ export default function HomePage() {
             onClick={() => setMenuOpen(!menuOpen)}
             className="relative rounded-lg p-2 transition hover:bg-white/10 md:hidden"
           >
-            <Menu className={`h-5 w-5 transition-transform ${menuOpen ? "rotate-90 opacity-0" : ""}`} />
-            <X className={`absolute inset-0 m-auto h-5 w-5 transition-transform ${menuOpen ? "" : "-rotate-90 opacity-0"}`} />
+            <Menu
+              className={`h-5 w-5 transition-transform ${
+                menuOpen ? "rotate-90 opacity-0" : ""
+              }`}
+            />
+            <X
+              className={`absolute inset-0 m-auto h-5 w-5 transition-transform ${
+                menuOpen ? "" : "-rotate-90 opacity-0"
+              }`}
+            />
           </button>
         </div>
       </header>
@@ -227,14 +267,29 @@ export default function HomePage() {
                   Contact
                 </button>
                 <div className="mx-3 border-t border-border" />
-                <Link
-                  href="/login"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted"
-                >
-                  <LogIn className="h-4 w-4 text-primary" />
-                  Login Admin
-                </Link>
+                {user
+                  ? (
+                    <button
+                      onClick={() => {
+                        signOut();
+                        setMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted w-full text-left"
+                    >
+                      <LogOut className="h-4 w-4 text-primary" />
+                      Logout
+                    </button>
+                  )
+                  : (
+                    <Link
+                      href="/login"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted"
+                    >
+                      <LogIn className="h-4 w-4 text-primary" />
+                      Login Admin
+                    </Link>
+                  )}
               </div>
             </motion.div>
           </>
@@ -242,87 +297,112 @@ export default function HomePage() {
       </AnimatePresence>
 
       {/* ─── Main Content ───────────────────────── */}
-      <main className="mx-auto max-w-5xl px-4 pt-5 sm:px-6">
-        {/* ── Promo Slideshow ──────────────────── */}
-        <div className="relative mb-6 overflow-hidden rounded-2xl">
-          <div className="relative aspect-[21/11] sm:aspect-[3/1]">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeSlide}
-                initial={{ opacity: 0, x: 40 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -40 }}
-                transition={{ duration: 0.5 }}
-                className={`absolute inset-0 flex flex-col items-center justify-center bg-gray-100 bg-cover bg-center text-white`}
-              >
-                {"url" in displaySlides[activeSlide] ? (
-                  <Image
-                    src={(displaySlides[activeSlide] as { url: string }).url}
-                    alt="Promo"
-                    fill
-                    className="object-cover"
-                    priority
-                  />
-                ) : (
-                  <div
-                    className={`absolute inset-0 bg-gradient-to-r ${(displaySlides[activeSlide] as any).gradient}`}
-                  />
-                )}
-              </motion.div>
-            </AnimatePresence>
-
-            {/* Arrows */}
-            <button
-              onClick={() => goSlide(-1)}
-              className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/20 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/40"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => goSlide(1)}
-              className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/20 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/40"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Dots */}
-          <div className="absolute bottom-2.5 left-1/2 z-10 flex -translate-x-1/2 gap-1.5">
-            {displaySlides.map((_, i) => (
+      <main className="mx-auto max-w-5xl px-4 pt-0 sm:px-6">
+        <div className="relative mb-6 -mx-4 bg-gradient-to-b from-emerald-900 via-emerald-700 to-emerald-600 px-4 pb-4 pt-5 sm:-mx-6 sm:px-6 rounded-b-3xl ">
+          {/* ── Promo Slideshow ──────────────────── */}
+          <div className="relative mb-6 overflow-hidden rounded-2xl">
+            <div className="relative aspect-[21/11] sm:aspect-[3/1]">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeSlide}
+                  initial={{
+                    opacity: 0,
+                    scale: 1.08,
+                    filter: "blur(10px)",
+                    x: 60,
+                  }}
+                  animate={{
+                    opacity: 1,
+                    scale: 1,
+                    filter: "blur(0px)",
+                    x: 0,
+                  }}
+                  exit={{
+                    opacity: 0,
+                    scale: 0.96,
+                    filter: "blur(10px)",
+                    x: -60,
+                  }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 80,
+                    damping: 20,
+                    mass: 1.2,
+                  }}
+                  className="absolute inset-0"
+                >
+                  {"url" in displaySlides[activeSlide]
+                    ? (
+                      <Image
+                        src={(displaySlides[activeSlide] as { url: string })
+                          .url}
+                        alt="Promo"
+                        fill
+                        className="object-cover"
+                        priority
+                      />
+                    )
+                    : (
+                      <div
+                        className={`absolute inset-0 bg-gradient-to-r ${
+                          (displaySlides[activeSlide] as any).gradient
+                        }`}
+                      />
+                    )}
+                </motion.div>
+              </AnimatePresence>
+              {/* Arrows */}
               <button
-                key={i}
-                onClick={() => {
-                  setActiveSlide(i);
-                  resetSlideTimer();
-                }}
-                className={`h-1.5 rounded-full transition-all ${
-                  i === activeSlide ? "w-5 bg-white" : "w-1.5 bg-white/50"
-                }`}
-              />
-            ))}
+                onClick={() => goSlide(-1)}
+                className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/20 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => goSlide(1)}
+                className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/20 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+            {/* Dots */}
+            <div className="absolute bottom-4.5 left-1/2 z-10 flex -translate-x-1/2 gap-1.5">
+              {displaySlides.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setActiveSlide(i);
+                    resetSlideTimer();
+                  }}
+                  className={`h-1.5 rounded-full transition-all ${
+                    i === activeSlide ? "w-5 bg-white" : "w-1.5 bg-white/50"
+                  }`}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-
-        {/* ── Search ──────────────────────────── */}
-        <div className="relative mb-6">
-          <Search className="absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search Item"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input-base w-full rounded-full pl-3 pr-10 text-sm shadow-sm"
-          />
+          {/* ── Search ──────────────────────────── */}
+          <div className="relative mb-6">
+            <Search className="absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search Item"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="bg-white w-full h-12 rounded-full pl-4 pr-10 text-sm shadow-sm outline-none"
+            />
+          </div>
         </div>
 
         {/* ── Loading ─────────────────────────── */}
         {loading && (
           <div className="flex flex-col items-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-primary/40" />
-            <p className="mt-3 text-xs text-muted-foreground">Memuat stok barang...</p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Loading stok...
+            </p>
           </div>
         )}
-
         {/* ── Empty ──────────────────────────── */}
         {!loading && filteredItems.length === 0 && (
           <div className="flex flex-col items-center py-20 text-center">
@@ -335,9 +415,9 @@ export default function HomePage() {
             </p>
           </div>
         )}
-
         {/* ── Product Grid ────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <p className="text-lg font-bold mb-3">Product Items</p>
+        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4">
           {filteredItems.map((item, idx) => (
             <motion.div
               key={item.id}
@@ -350,21 +430,23 @@ export default function HomePage() {
             >
               {/* Image */}
               <div className="relative aspect-square overflow-hidden bg-muted">
-                {item.image_url ? (
-                  <Image
-                    loader={passthroughLoader}
-                    unoptimized
-                    src={item.image_url}
-                    alt={item.name}
-                    width={280}
-                    height={280}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center">
-                    <Package className="h-8 w-8 text-muted-foreground/20" />
-                  </div>
-                )}
+                {item.image_url
+                  ? (
+                    <Image
+                      loader={passthroughLoader}
+                      unoptimized
+                      src={item.image_url}
+                      alt={item.name}
+                      width={280}
+                      height={280}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                  )
+                  : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <Package className="h-8 w-8 text-muted-foreground/20" />
+                    </div>
+                  )}
 
                 {/* Stock badge */}
                 <span
@@ -372,38 +454,26 @@ export default function HomePage() {
                     item.stock > 5
                       ? "bg-emerald-500"
                       : item.stock > 0
-                        ? "bg-amber-500"
-                        : "bg-red-500"
+                      ? "bg-amber-500"
+                      : "bg-red-500"
                   }`}
                 >
                   {item.stock > 0 ? `Stok: ${item.stock}` : "Habis"}
                 </span>
               </div>
-
               {/* Info */}
               <div className="p-2.5">
-                <h3 className="line-clamp-2 min-h-[2.25rem] text-xs font-medium leading-snug text-foreground">
+                <h3 className="line-clamp-2 min-h-[1.5rem] text-xs font-medium leading-snug text-foreground">
                   {item.name}
                 </h3>
-                <p className="mt-1.5 text-sm font-bold text-primary">{currency(item.price)}</p>
+                <p className="text-sm font-bold text-primary">
+                  {currency(item.price)}
+                </p>
               </div>
             </motion.div>
           ))}
         </div>
       </main>
-
-      {/* ─── FAB WhatsApp ───────────────────────── */}
-      <motion.button
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-        onClick={() => handleContactClick()}
-        className="fixed bottom-6 right-5 z-30 flex h-13 w-13 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg transition hover:bg-[#128C7E]"
-      >
-        <MessageCircle className="h-6 w-6" />
-      </motion.button>
-
       {/* ─── WhatsApp Contact Modal ─────────────── */}
       <AnimatePresence>
         {showContactForm && (
@@ -439,7 +509,9 @@ export default function HomePage() {
 
               <form onSubmit={sendWhatsApp} className="space-y-4 p-5">
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Nama Anda</label>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    Nama Anda
+                  </label>
                   <input
                     type="text"
                     className="input-base"
@@ -450,7 +522,9 @@ export default function HomePage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Pesan</label>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    Pesan
+                  </label>
                   <textarea
                     className="input-base min-h-[90px] resize-none"
                     placeholder="Tulis pesan Anda..."

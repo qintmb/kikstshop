@@ -298,10 +298,7 @@ export default function StorePage() {
 
       {/* ─── Main Content ───────────────────────── */}
       <main className="mx-auto max-w-5xl px-4 pt-0 sm:px-6">
-        <div className="relative mb-6 -mx-4 bg-gradient-to-b
-  from-emerald-900
-  via-emerald-700
-  to-emerald-600 px-4 pb-4 pt-5 sm:-mx-6 sm:px-6 rounded-b-3xl ">
+        <div className="relative mb-6 -mx-4 bg-gradient-to-b from-emerald-900 via-emerald-700 to-emerald-600 px-4 pb-4 pt-5 sm:-mx-6 sm:px-6 rounded-b-3xl ">
           {/* ── Promo Slideshow ──────────────────── */}
           <div className="relative mb-6 overflow-hidden rounded-2xl">
             <div className="relative aspect-[21/11] sm:aspect-[3/1]">
