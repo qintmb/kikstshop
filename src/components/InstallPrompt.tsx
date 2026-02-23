@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Share, Plus, Download } from "lucide-react";
+import { useAuth } from "@/components/AuthProvider";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -46,6 +47,7 @@ function isStandalone(): boolean {
 }
 
 export function InstallPrompt() {
+  const { user } = useAuth();
   const [show, setShow] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOSDevice, setIsIOSDevice] = useState(false);
@@ -53,13 +55,13 @@ export function InstallPrompt() {
   const handleBeforeInstall = useCallback((e: Event) => {
     e.preventDefault();
     setDeferredPrompt(e as BeforeInstallPromptEvent);
-    if (!isDismissed() && !isStandalone()) {
+    if (!isDismissed() && !isStandalone() && user) { // Only show if user is authenticated
       setShow(true);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    if (isStandalone() || isDismissed()) return;
+    if (isStandalone() || isDismissed() || !user) return; // Don't show if user is not authenticated
 
     // iOS detection
     if (isIOS()) {
@@ -72,7 +74,7 @@ export function InstallPrompt() {
     // Android / Chrome
     window.addEventListener("beforeinstallprompt", handleBeforeInstall);
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
-  }, [handleBeforeInstall]);
+  }, [handleBeforeInstall, user]);
 
   const handleInstall = async () => {
     if (!deferredPrompt) return;

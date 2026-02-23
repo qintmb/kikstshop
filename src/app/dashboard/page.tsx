@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
+  endOfDay,
   format,
   parseISO,
   startOfDay,
   startOfMonth,
   startOfWeek,
-  startOfYear,
   subDays,
 } from "date-fns";
 import {
@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   ArrowDownLeft,
   Bell,
+  CalendarDays,
   Check,
   ChevronRight,
   Clock,
@@ -1600,12 +1601,12 @@ function LoadingState() {
 
 type Transaction = (Sale & { type: "sale" }) | (Expense & { type: "expense" });
 
-type DashFilter = "all" | "weekly" | "monthly" | "yearly";
+type DashFilter = "all" | "weekly" | "monthly" | "custom";
 const DASH_FILTERS: { key: DashFilter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "weekly", label: "Weekly" },
   { key: "monthly", label: "Monthly" },
-  { key: "yearly", label: "Yearly" },
+  { key: "custom", label: "Custom" },
 ];
 
 function DashboardSection({
@@ -1622,20 +1623,36 @@ function DashboardSection({
   onViewDetail: () => void;
 }) {
   const [dashFilter, setDashFilter] = useState<DashFilter>("all");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
 
   const metrics: DashboardMetrics = useMemo(() => {
     const now = new Date();
     let cutoff: Date | null = null;
+    let endCutoff: Date | null = null;
 
     if (dashFilter === "weekly") cutoff = startOfWeek(now, { weekStartsOn: 1 });
     else if (dashFilter === "monthly") cutoff = startOfMonth(now);
-    else if (dashFilter === "yearly") cutoff = startOfYear(now);
+    else if (dashFilter === "custom" && customStart) {
+      cutoff = startOfDay(new Date(customStart));
+      if (customEnd) endCutoff = endOfDay(new Date(customEnd));
+    }
 
     const fSales = cutoff
-      ? sales.filter((s) => new Date(s.sold_at) >= cutoff!)
+      ? sales.filter((s) => {
+        const d = new Date(s.sold_at);
+        if (d < cutoff!) return false;
+        if (endCutoff && d > endCutoff) return false;
+        return true;
+      })
       : sales;
     const fExpenses = cutoff
-      ? expenses.filter((e) => new Date(e.bought_at) >= cutoff!)
+      ? expenses.filter((e) => {
+        const d = new Date(e.bought_at);
+        if (d < cutoff!) return false;
+        if (endCutoff && d > endCutoff) return false;
+        return true;
+      })
       : expenses;
 
     const totalSales = fSales.length;
@@ -1656,7 +1673,7 @@ function DashboardSection({
       profit: totalRevenue - totalExpenses,
       piutang,
     };
-  }, [sales, expenses, dashFilter]);
+  }, [sales, expenses, dashFilter, customStart, customEnd]);
 
   return (
     <motion.section
@@ -1701,15 +1718,72 @@ function DashboardSection({
                 : "border-gray-300 bg-gray-100/60 text-gray-600 hover:bg-gray-200/80"
             }`}
           >
+            {f.key === "custom" && (
+              <CalendarDays className="mr-1 inline h-3 w-3" />
+            )}
             {f.label}
           </button>
         ))}
       </motion.div>
 
+      {/* Custom Date Range Picker */}
+      <AnimatePresence>
+        {dashFilter === "custom" && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+              <div className="mb-2 flex items-center gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5 text-primary" />
+                <p className="text-xs font-semibold text-foreground">
+                  Pilih Rentang Tanggal
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                    Dari
+                  </label>
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-foreground outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                    Sampai
+                  </label>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    min={customStart}
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-foreground outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+              {customStart && customEnd && (
+                <p className="mt-2 text-center text-[10px] text-muted-foreground">
+                  Menampilkan data{" "}
+                  {format(new Date(customStart), "dd MMM yyyy")} –{" "}
+                  {format(new Date(customEnd), "dd MMM yyyy")}
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Metrics Grid */}
       <motion.div variants={fadeInUp} className="grid grid-cols-2 gap-2">
         <MetricCard
-          label="Total Penjualan"
+          label="Total Transaksi"
           value={metrics.totalSales.toLocaleString("id-ID")}
           variant="sales"
           icon={ShoppingCart}
