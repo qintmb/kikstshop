@@ -11,6 +11,7 @@ import {
   startOfWeek,
   subDays,
 } from "date-fns";
+import { id as idLocale } from "date-fns/locale";
 import {
   Area,
   AreaChart,
@@ -22,11 +23,13 @@ import {
 } from "recharts";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import * as XLSX from "xlsx";
-import { AnimatePresence, motion, number } from "framer-motion";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
   ArrowDownLeft,
+  ArrowLeft,
   Bell,
   CalendarDays,
   Check,
@@ -231,7 +234,7 @@ export default function HomePage() {
       supabase
         .from("sales")
         .select(
-          "id,sold_at,stock_item_id,item_name,unit_price,qty,total_price,buyer_name,status",
+          "id,sold_at,paid_at,stock_item_id,item_name,unit_price,qty,total_price,buyer_name,status",
         )
         .order("sold_at", { ascending: false }),
       supabase
@@ -817,174 +820,719 @@ export default function HomePage() {
     await loadAll();
   };
 
-  const exportExcel = () => {
-    const modalSales = filteredSales.filter((s) =>
-      s.item_name === "Modal / Dana Awal"
-    );
-    const actualSales = filteredSales.filter((s) =>
-      s.item_name !== "Modal / Dana Awal"
+  const exportExcel = async () => {
+    const start = new Date(`${fromDate}T00:00:00`);
+    const end = new Date(`${toDate}T23:59:59`);
+
+    // --- Calculations --- (same logic as PDF summary) //
+    const penjualanSouvenir = sales.filter((s) => {
+      if (s.item_name === "Modal / Dana Awal") return false;
+      const d = new Date(s.sold_at);
+      return d >= start && d <= end;
+    });
+    const totalPenjualanSouvenir = penjualanSouvenir.reduce(
+      (a, s) => a + s.total_price,
+      0,
     );
 
-    const totalRevenue = actualSales.reduce((a, s) => a + s.total_price, 0);
+    const pembayaranPiutangList = sales.filter((s) => {
+      if (
+        s.status !== "lunas" || !s.paid_at ||
+        s.item_name === "Modal / Dana Awal"
+      ) return false;
+      const pd = new Date(s.paid_at);
+      const sd = new Date(s.sold_at);
+      return pd >= start && pd <= end && sd < start;
+    });
+    const totalPembayaranPiutang = pembayaranPiutangList.reduce(
+      (a, s) => a + s.total_price,
+      0,
+    );
+
+    const modalSales = sales.filter((s) => {
+      if (s.item_name !== "Modal / Dana Awal") return false;
+      const d = new Date(s.sold_at);
+      return d >= start && d <= end;
+    });
     const totalModal = modalSales.reduce((a, s) => a + s.total_price, 0);
-    const totalExpense = filteredExpenses.reduce((a, e) => a + e.total_cost, 0);
-    const pendapatan = totalRevenue - totalExpense;
-    const now = format(new Date(), "dd/MM/yyyy HH:mm");
 
-    // Build rows manually for structured header layout
-    const wsData: (string | number | null)[][] = [
-      ["LAPORAN PENGADAAN & PENJUALAN SOUVENIR"],
-      ["SEKSI EKONOMI"],
-      [],
-      [
-        "Dari Tanggal",
-        `: ${fromDate}`,
-        null,
-        null,
-        null,
-        "Tanggal Cetak",
-        `: ${now}`,
-      ],
-      ["Sampai Tanggal", `: ${toDate}`],
-      [],
-      [
-        "Total Penjualan",
-        `: ${actualSales.length} Transaksi`,
-        null,
-        null,
-        null,
-        "Pengeluaran",
-        `: ${currency(totalExpense)}`,
-      ],
-      ["Penjualan", `: ${currency(totalRevenue)}`],
-      [
-        "Total Modal",
-        `: ${currency(totalModal)}`,
-        null,
-        null,
-        null,
-        "Pendapatan Bersih",
-        `: ${currency(pendapatan)}`,
-      ],
-      [],
-      ["Tanggal", "Nama Barang", "Qty", "Harga", "Total", "Pembeli", "Status"],
-    ];
+    const pengadaanStockList = expenses.filter((e) => {
+      const d = new Date(e.bought_at);
+      return d >= start && d <= end &&
+        !(e.description || "").toLowerCase().includes("setoran");
+    });
+    const totalPengadaanStock = pengadaanStockList.reduce(
+      (a, e) => a + e.total_cost,
+      0,
+    );
 
-    filteredSales.forEach((item) => {
-      wsData.push([
-        format(new Date(item.sold_at), "dd/MM/yyyy HH:mm"),
-        item.item_name,
-        item.qty,
-        item.unit_price,
-        item.total_price,
-        item.buyer_name ?? "-",
-        item.status === "lunas" ? "Lunas" : "Belum Bayar",
-      ]);
+    const piutangBulanIniList = penjualanSouvenir.filter((s) =>
+      s.status === "belum_bayar"
+    );
+    const totalPiutangBulanIni = piutangBulanIniList.reduce(
+      (a, s) => a + s.total_price,
+      0,
+    );
+
+    const setoranBendaharaList = expenses.filter((e) => {
+      const d = new Date(e.bought_at);
+      return d >= start && d <= end &&
+        (e.description || "").toLowerCase().includes("setoran");
+    });
+    const totalSetoranBendahara = setoranBendaharaList.reduce(
+      (a, e) => a + e.total_cost,
+      0,
+    );
+
+    const totalPemasukanList = totalModal + totalPenjualanSouvenir +
+      totalPembayaranPiutang;
+    const totalPengeluaranList = totalPengadaanStock + totalPiutangBulanIni +
+      totalSetoranBendahara;
+    const saldoAkhir = totalPemasukanList - totalPengeluaranList;
+
+    const bulanPeriode = format(end, "MMMM yyyy", { locale: idLocale });
+    const periodeHeader = `PERIODE ${
+      format(start, "dd MMM", { locale: idLocale }).toUpperCase()
+    } - ${format(end, "dd MMM yyyy", { locale: idLocale }).toUpperCase()}`;
+    const dateCetak = format(new Date(), "dd MMMM yyyy", { locale: idLocale });
+
+    // --- Init Workbook --- //
+    const wb = new ExcelJS.Workbook();
+
+    // ==========================================
+    // SHEET 1: LAPORAN KAS
+    // ==========================================
+    const ws1 = wb.addWorksheet("Laporan Kas");
+
+    // Set widths: A (margin), B (Keterangan), C (Pemasukan), D (Pengeluaran)
+    ws1.getColumn(1).width = 3;
+    ws1.getColumn(2).width = 45;
+    ws1.getColumn(3).width = 25;
+    ws1.getColumn(4).width = 25;
+
+    // Helper default border
+    const thinBorder: Partial<ExcelJS.Borders> = {
+      top: { style: "thin" },
+      left: { style: "thin" },
+      bottom: { style: "thin" },
+      right: { style: "thin" },
+    };
+
+    // Row 1-3 Headers
+    ws1.mergeCells("B1:D1");
+    ws1.getCell("B1").value = "LAPORAN PENJUALAN SOUVENIR";
+    ws1.getCell("B1").font = { bold: true, size: 14 };
+    ws1.getCell("B1").alignment = { horizontal: "center", vertical: "middle" };
+
+    ws1.mergeCells("B2:D2");
+    ws1.getCell("B2").value = "SEKSI EKONOMI KIKST";
+    ws1.getCell("B2").font = { bold: true, size: 12 };
+    ws1.getCell("B2").alignment = { horizontal: "center", vertical: "middle" };
+
+    ws1.mergeCells("B3:D3");
+    ws1.getCell("B3").value = periodeHeader;
+    ws1.getCell("B3").font = { bold: true, size: 11 };
+    ws1.getCell("B3").alignment = { horizontal: "center", vertical: "middle" };
+
+    // Row 5: KETERANGAN | JUMLAH
+    ws1.mergeCells("B5:B6");
+    const cellKet = ws1.getCell("B5");
+    cellKet.value = "KETERANGAN";
+    cellKet.font = { bold: true };
+    cellKet.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFD9EFDB" },
+    }; // Light Green
+    cellKet.alignment = { horizontal: "center", vertical: "middle" };
+    cellKet.border = thinBorder;
+    ws1.getCell("B6").border = thinBorder;
+
+    ws1.mergeCells("C5:D5");
+    const cellJumlah = ws1.getCell("C5");
+    cellJumlah.value = "JUMLAH (Rp)";
+    cellJumlah.font = { bold: true };
+    cellJumlah.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFD9EFDB" },
+    };
+    cellJumlah.alignment = { horizontal: "center", vertical: "middle" };
+    cellJumlah.border = thinBorder;
+    ws1.getCell("D5").border = thinBorder;
+
+    // Row 6: Pemasukan | Pengeluaran
+    const arrLabels = ["C6", "D6"];
+    arrLabels.forEach((c, idx) => {
+      const cell = ws1.getCell(c);
+      cell.value = idx === 0 ? "Pemasukan" : "Pengeluaran";
+      cell.font = { bold: true };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFD9EFDB" },
+      };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = thinBorder;
     });
 
-    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+    // Helper logic to add bordered rows
+    let currentRow = 7;
+    const addRow = (
+      bTitle: string,
+      cVal: string | number | null,
+      dVal: string | number | null,
+      isBold: boolean = false,
+      bgColor?: string,
+    ) => {
+      const row = ws1.getRow(currentRow);
+      ws1.getCell(`B${currentRow}`).value = bTitle;
+      ws1.getCell(`C${currentRow}`).value = cVal;
+      ws1.getCell(`D${currentRow}`).value = dVal;
 
-    // Column widths
-    worksheet["!cols"] = [
-      { wch: 20 }, // A - Tanggal
-      { wch: 28 }, // B - Nama Barang
-      { wch: 6 }, // C - Qty
-      { wch: 14 }, // D - Harga
-      { wch: 14 }, // E - Total
-      { wch: 18 }, // F - Pembeli
-      { wch: 18 }, // G - Status
+      ["B", "C", "D"].forEach((col) => {
+        const cell = ws1.getCell(`${col}${currentRow}`);
+        cell.border = thinBorder;
+        if (isBold) cell.font = { bold: true };
+        if (bgColor) {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: bgColor },
+          };
+        }
+        // If it's a number column, set formatting
+        if (col !== "B" && typeof cell.value === "number") {
+          cell.numFmt = "#,##0"; // Accounting format integer
+        }
+      });
+      currentRow++;
+    };
+
+    // Pemasukan Data
+    addRow("Modal Awal", totalModal, null);
+    addRow("Penjualan Barang Souvenir", totalPenjualanSouvenir, null);
+    addRow("Pembayaran Piutang", totalPembayaranPiutang, null);
+
+    // Empty row simulating spacing before the sum
+    addRow("", null, null);
+
+    // Sum Pemasukan line
+    addRow("", totalPemasukanList, null, true, "FFD9EFDB");
+
+    // Pengeluaran Header
+    addRow("PENGELUARAN", null, null, true);
+
+    // Pengeluaran Data
+    addRow(
+      `Pengadaan Stock Souvenir Bulan ${bulanPeriode}`,
+      null,
+      totalPengadaanStock,
+    );
+    addRow(`Piutang Bulan ${bulanPeriode}`, null, totalPiutangBulanIni);
+
+    // 3 empty bordered rows (as in reference image 15,16,17)
+    addRow("", null, null);
+    addRow("", null, null);
+
+    // Sum Pengeluaran Partial
+    addRow(
+      "",
+      null,
+      totalPengadaanStock + totalPiutangBulanIni,
+      true,
+      "FFE2E2E2",
+    ); // Light Gray
+
+    addRow("Setoran Bendahara", null, totalSetoranBendahara);
+
+    // Sum Final Row
+    addRow(
+      "SALDO AKHIR",
+      totalPemasukanList,
+      totalPengeluaranList,
+      true,
+      "FFB3E5B5",
+    );
+
+    // Saldo Final Row (Row 20)
+    ws1.getCell(`B${currentRow}`).border = thinBorder;
+    ws1.getCell(`B${currentRow}`).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFB3E5B5" },
+    };
+    ws1.mergeCells(`C${currentRow}:D${currentRow}`);
+    const cellSaldo = ws1.getCell(`C${currentRow}`);
+    cellSaldo.value = saldoAkhir;
+    cellSaldo.font = { bold: true };
+    cellSaldo.numFmt = "#,##0";
+    cellSaldo.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFB3E5B5" },
+    };
+    cellSaldo.border = thinBorder;
+    cellSaldo.alignment = { horizontal: "right", vertical: "middle" };
+    ws1.getCell(`D${currentRow}`).border = thinBorder;
+
+    currentRow += 2; // Jump to signature space
+
+    // Tanda Tangan
+    ws1.mergeCells(`C${currentRow}:D${currentRow}`);
+    ws1.getCell(`C${currentRow}`).value = `Tonasa, ${dateCetak}`;
+    ws1.getCell(`C${currentRow}`).alignment = { horizontal: "center" };
+    currentRow++;
+
+    ws1.mergeCells(`C${currentRow}:D${currentRow}`);
+    ws1.getCell(`C${currentRow}`).value = `Dibuat Oleh,`;
+    ws1.getCell(`C${currentRow}`).alignment = { horizontal: "center" };
+    currentRow += 4;
+
+    ws1.mergeCells(`C${currentRow}:D${currentRow}`);
+    const certName = ws1.getCell(`C${currentRow}`);
+    certName.value = `Nurul Fatimah Assagaf`;
+    certName.font = { bold: true, underline: true };
+    certName.alignment = { horizontal: "center" };
+    currentRow++;
+
+    ws1.mergeCells(`C${currentRow}:D${currentRow}`);
+    ws1.getCell(`C${currentRow}`).value = `Anggota Seksi Ekonomi`;
+    ws1.getCell(`C${currentRow}`).alignment = { horizontal: "center" };
+
+    // ==========================================
+    // SHEET 2: DATA TRANSAKSI
+    // ==========================================
+    const ws2 = wb.addWorksheet("Data Transaksi");
+
+    // Setting columns definition
+    ws2.columns = [
+      { header: "Tanggal Transaksi", key: "tanggal", width: 20 },
+      { header: "Nama Barang/Pengeluaran", key: "nama", width: 35 },
+      { header: "Kategori", key: "kategori", width: 25 },
+      { header: "Qty", key: "qty", width: 8 },
+      { header: "Harga/Biaya", key: "harga", width: 16 },
+      { header: "Total", key: "total", width: 18 },
+      { header: "Pembeli/Keterangan", key: "pembeli", width: 25 },
+      { header: "Status", key: "status", width: 15 },
+      { header: "Tanggal Lunas", key: "tgl_lunas", width: 18 },
     ];
 
-    // Merge title cells
-    worksheet["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }, // Row 1 title
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } }, // Row 2 subtitle
-    ];
+    // Style Header Row (bold, background color)
+    const headerRow = ws2.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; // white text
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF505050" },
+      }; // Dark Grey
+      cell.border = thinBorder;
+      cell.alignment = { horizontal: "center" }; // Center header text
+    });
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan");
-    XLSX.writeFile(workbook, `laporan-${fromDate}-to-${toDate}.xlsx`);
+    // Populate Data
+    const addTransactionRow = (dt: {
+      tanggal: string;
+      nama: string;
+      kategori: string;
+      qty: number | string;
+      harga: number | string;
+      total: number | string;
+      pembeli: string;
+      status: string;
+      tgl_lunas: string;
+    }) => {
+      const row = ws2.addRow(dt);
+      row.eachCell((cell, colNumber) => {
+        cell.border = thinBorder;
+        if (colNumber === 5 || colNumber === 6) {
+          // Numeric formatting for harga and total columns
+          if (typeof cell.value === "number") {
+            cell.numFmt = "#,##0";
+          }
+        }
+      });
+    };
+
+    filteredSales.forEach((s) => {
+      addTransactionRow({
+        tanggal: format(new Date(s.sold_at), "dd/MM/yyyy HH:mm"),
+        nama: s.item_name,
+        kategori: "Pemasukan",
+        qty: s.qty,
+        harga: s.unit_price,
+        total: s.total_price,
+        pembeli: s.buyer_name ?? "-",
+        status: s.status === "lunas" ? "Lunas" : "Belum Bayar",
+        tgl_lunas: s.paid_at ? format(new Date(s.paid_at), "dd/MM/yyyy") : "-",
+      });
+    });
+
+    pembayaranPiutangList.forEach((s) => {
+      addTransactionRow({
+        tanggal: format(new Date(s.sold_at), "dd/MM/yyyy HH:mm"),
+        nama: s.item_name,
+        kategori: "Pembayaran Piutang Lewat Bulan",
+        qty: s.qty,
+        harga: s.unit_price,
+        total: s.total_price,
+        pembeli: s.buyer_name ?? "-",
+        status: s.status === "lunas" ? "Lunas" : "Belum Bayar",
+        tgl_lunas: s.paid_at ? format(new Date(s.paid_at), "dd/MM/yyyy") : "-",
+      });
+    });
+
+    pengadaanStockList.forEach((e) => {
+      addTransactionRow({
+        tanggal: format(new Date(e.bought_at), "dd/MM/yyyy HH:mm"),
+        nama: e.description ?? "-",
+        kategori: "Pengadaan Barang",
+        qty: "-",
+        harga: "-",
+        total: e.total_cost,
+        pembeli: "-",
+        status: "-",
+        tgl_lunas: "-",
+      });
+    });
+
+    setoranBendaharaList.forEach((e) => {
+      addTransactionRow({
+        tanggal: format(new Date(e.bought_at), "dd/MM/yyyy HH:mm"),
+        nama: e.description ?? "-",
+        kategori: "Setoran",
+        qty: "-",
+        harga: "-",
+        total: e.total_cost,
+        pembeli: "-",
+        status: "-",
+        tgl_lunas: "-",
+      });
+    });
+
+    ws2.autoFilter = "A1:I1";
+
+    // Generate output
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    saveAs(
+      blob,
+      `laporan-ekonomi-${format(end, "MMM-yyyy").toLowerCase()}.xlsx`,
+    );
   };
 
   const exportPdf = () => {
     const doc = new jsPDF({
-      orientation: "landscape",
+      orientation: "portrait",
       unit: "pt",
       format: "a4",
     });
     const pageWidth = doc.internal.pageSize.getWidth();
 
-    const modalSales = filteredSales.filter((s) =>
-      s.item_name === "Modal / Dana Awal"
-    );
-    const actualSales = filteredSales.filter((s) =>
-      s.item_name !== "Modal / Dana Awal"
+    const start = new Date(`${fromDate}T00:00:00`);
+    const end = new Date(`${toDate}T23:59:59`);
+
+    // Pemasukan: Penjualan Barang Souvenir (sold_at di rentang)
+    const penjualanSouvenir = sales.filter((s) => {
+      if (s.item_name === "Modal / Dana Awal") return false;
+      const d = new Date(s.sold_at);
+      return d >= start && d <= end;
+    });
+    const totalPenjualanSouvenir = penjualanSouvenir.reduce(
+      (a, s) => a + s.total_price,
+      0,
     );
 
-    const totalRevenue = actualSales.reduce((a, s) => a + s.total_price, 0);
+    // Pemasukan: Pembayaran Piutang (paid_at di rentang, sold_at sebelum rentang, status lunas)
+    const pembayaranPiutangList = sales.filter((s) => {
+      if (
+        s.status !== "lunas" || !s.paid_at ||
+        s.item_name === "Modal / Dana Awal"
+      ) return false;
+      const pd = new Date(s.paid_at);
+      const sd = new Date(s.sold_at);
+      return pd >= start && pd <= end && sd < start;
+    });
+    const totalPembayaranPiutang = pembayaranPiutangList.reduce(
+      (a, s) => a + s.total_price,
+      0,
+    );
+
+    // Pemasukan: Modal Awal (sold_at di rentang)
+    const modalSales = sales.filter((s) => {
+      if (s.item_name !== "Modal / Dana Awal") return false;
+      const d = new Date(s.sold_at);
+      return d >= start && d <= end;
+    });
     const totalModal = modalSales.reduce((a, s) => a + s.total_price, 0);
-    const totalExpense = filteredExpenses.reduce((a, e) => a + e.total_cost, 0);
-    const pendapatan = totalRevenue - totalExpense;
-    const now = format(new Date(), "dd/MM/yyyy HH:mm");
 
-    // Title
+    // Pengeluaran: Pengadaan Stock Souvenir (Semua expenses kecuali Setoran Bendahara)
+    const pengadaanStockList = expenses.filter((e) => {
+      const d = new Date(e.bought_at);
+      return d >= start && d <= end &&
+        !(e.description || "").toLowerCase().includes("setoran");
+    });
+    const totalPengadaanStock = pengadaanStockList.reduce(
+      (a, e) => a + e.total_cost,
+      0,
+    );
+
+    // Pengeluaran: Piutang (belum bayar, sold_at di rentang)
+    const piutangBulanIniList = penjualanSouvenir.filter((s) =>
+      s.status === "belum_bayar"
+    );
+    const totalPiutangBulanIni = piutangBulanIniList.reduce(
+      (a, s) => a + s.total_price,
+      0,
+    );
+
+    // Pengeluaran: Setoran Bendahara
+    const setoranBendaharaList = expenses.filter((e) => {
+      const d = new Date(e.bought_at);
+      return d >= start && d <= end &&
+        (e.description || "").toLowerCase().includes("setoran");
+    });
+    const totalSetoranBendahara = setoranBendaharaList.reduce(
+      (a, e) => a + e.total_cost,
+      0,
+    );
+
+    // Totals
+    const totalPemasukanList = totalModal + totalPenjualanSouvenir +
+      totalPembayaranPiutang;
+    const totalPengeluaranList = totalPengadaanStock + totalPiutangBulanIni +
+      totalSetoranBendahara;
+    const saldoAkhir = totalPemasukanList - totalPengeluaranList;
+
+    // Formatting
+    const bulanPeriode = format(end, "MMMM yyyy", { locale: idLocale });
+    const periodeHeader = `PERIODE ${
+      format(start, "dd MMM", { locale: idLocale }).toUpperCase()
+    } - ${format(end, "dd MMM yyyy", { locale: idLocale }).toUpperCase()}`;
+    const dateCetak = format(new Date(), "dd MMMM yyyy", { locale: idLocale });
+
+    // --- HALAMAN 1: SUMMARY LAPORAN KAS ---
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text("LAPORAN PENGADAAN & PENJUALAN SOUVENIR", pageWidth / 2, 36, {
+    doc.text("LAPORAN PENJUALAN SOUVENIR", pageWidth / 2, 40, {
       align: "center",
     });
     doc.setFontSize(12);
-    doc.text("SEKSI EKONOMI", pageWidth / 2, 52, { align: "center" });
-
-    // Left info block
+    doc.text("SEKSI EKONOMI KIKST", pageWidth / 2, 58, { align: "center" });
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    const infoY = 76;
-    doc.text(`Dari Tanggal       : ${fromDate}`, 40, infoY);
-    doc.text(`Sampai Tanggal  : ${toDate}`, 40, infoY + 14);
+    doc.setFontSize(11);
+    doc.text(periodeHeader, pageWidth / 2, 74, { align: "center" });
 
-    doc.text(
-      `Total Penjualan  : ${actualSales.length} Transaksi`,
-      40,
-      infoY + 36,
-    );
-    doc.text(
-      `Penjualan            : ${currency(totalRevenue)}`,
-      40,
-      infoY + 50,
-    );
-    doc.text(`Total Modal         : ${currency(totalModal)}`, 40, infoY + 64);
-    doc.text(`Pendapatan Bersih: ${currency(pendapatan)}`, 40, infoY + 78);
-
-    // Right info block
-    doc.text(`Tanggal Cetak : ${now}`, pageWidth - 200, infoY);
-    doc.text(
-      `Pengeluaran    : ${currency(totalExpense)}`,
-      pageWidth - 200,
-      infoY + 36,
-    );
-
-    // Table
     autoTable(doc, {
-      startY: infoY + 84,
+      startY: 100,
       head: [[
-        "Tanggal",
-        "Nama Barang",
-        "Qty",
-        "Harga",
-        "Total",
-        "Pembeli",
-        "Status",
+        { content: "KETERANGAN", styles: { halign: "center" } },
+        { content: "JUMLAH (Rp)", colSpan: 2, styles: { halign: "center" } },
       ]],
-      body: filteredSales.map((item) => [
-        format(new Date(item.sold_at), "dd/MM/yyyy HH:mm"),
-        item.item_name,
-        item.qty,
-        currency(item.unit_price),
-        currency(item.total_price),
-        item.buyer_name ?? "-",
-        item.status === "lunas" ? "Lunas" : "Belum Bayar",
-      ]),
+      body: [
+        [
+          "",
+          {
+            content: "Pemasukan",
+            styles: { halign: "center", fontStyle: "bold" },
+          },
+          {
+            content: "Pengeluaran",
+            styles: { halign: "center", fontStyle: "bold" },
+          },
+        ],
+        ["Modal Awal", currency(totalModal), ""],
+        ["Penjualan Barang Souvenir", currency(totalPenjualanSouvenir), ""],
+        ["Pembayaran Piutang", currency(totalPembayaranPiutang), ""],
+        [
+          { content: "", styles: { fillColor: [200, 255, 200] } },
+          {
+            content: currency(totalPemasukanList),
+            styles: { fillColor: [200, 255, 200], fontStyle: "bold" },
+          },
+          { content: "", styles: { fillColor: [200, 255, 200] } },
+        ],
+        [{ content: "PENGELUARAN", styles: { fontStyle: "bold" } }, "", ""],
+        [
+          `Pengadaan Stock Souvenir Bulan ${bulanPeriode}`,
+          "",
+          currency(totalPengadaanStock),
+        ],
+        [`Piutang Bulan ${bulanPeriode}`, "", currency(totalPiutangBulanIni)],
+        [
+          { content: "", styles: { fillColor: [220, 220, 220] } },
+          { content: "", styles: { fillColor: [220, 220, 220] } },
+          {
+            content: currency(totalPengadaanStock + totalPiutangBulanIni),
+            styles: { fillColor: [220, 220, 220], fontStyle: "bold" },
+          },
+        ],
+        ["Setoran Bendahara", "", currency(totalSetoranBendahara)],
+        [
+          {
+            content: "SALDO AKHIR",
+            styles: {
+              fillColor: [120, 190, 120],
+              fontStyle: "bold",
+              halign: "center",
+            },
+          },
+          {
+            content: currency(totalPemasukanList),
+            styles: { fillColor: [120, 190, 120], fontStyle: "bold" },
+          },
+          {
+            content: currency(totalPengeluaranList),
+            styles: { fillColor: [120, 190, 120], fontStyle: "bold" },
+          },
+        ],
+        [
+          { content: "", styles: { fillColor: [120, 190, 120] } },
+          {
+            content: currency(saldoAkhir),
+            colSpan: 2,
+            styles: {
+              fillColor: [120, 190, 120],
+              fontStyle: "bold",
+              halign: "center",
+            },
+          },
+        ],
+      ],
+      theme: "grid",
+      headStyles: {
+        fillColor: [180, 230, 180],
+        textColor: [0, 0, 0],
+        fontStyle: "bold",
+      },
+      styles: {
+        fontSize: 10,
+        font: "helvetica",
+        cellPadding: 6,
+        textColor: [0, 0, 0],
+      },
+      columnStyles: {
+        0: { cellWidth: 260 },
+        1: { halign: "right", cellWidth: 120 },
+        2: { halign: "right", cellWidth: 120 },
+      },
+    });
+
+    const finalY = (doc as any).lastAutoTable.finalY || 150;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    // Align signature to the right side
+    const sigX = pageWidth - 140;
+    doc.text(`Tonasa, ${dateCetak}`, sigX, finalY + 40, { align: "center" });
+    doc.text("Dibuat Oleh,", sigX, finalY + 54, { align: "center" });
+
+    doc.setFont("helvetica", "bold");
+    // Underline trick using splitTextToSize or just manual doc.line, but easiest is just bold
+    doc.text("Nurul Fatimah Assagaf", sigX, finalY + 110, { align: "center" });
+    const textWidth = doc.getTextWidth("Nurul Fatimah Assagaf");
+    doc.setLineWidth(0.5);
+    doc.line(
+      sigX - textWidth / 2,
+      finalY + 112,
+      sigX + textWidth / 2,
+      finalY + 112,
+    );
+
+    doc.setFont("helvetica", "normal");
+    doc.text("Anggota Seksi Ekonomi", sigX, finalY + 124, { align: "center" });
+
+    // --- HALAMAN 2: DATA TRANSAKSI ---
+    doc.addPage("a4", "landscape");
+    const pageWidthLandscape = doc.internal.pageSize.getWidth();
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("DAFTAR DETAIL TRANSAKSI", pageWidthLandscape / 2, 40, {
+      align: "center",
+    });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`Periode: ${periodeHeader}`, pageWidthLandscape / 2, 54, {
+      align: "center",
+    });
+
+    const transactionsData: (string | number | null)[][] = [];
+
+    // Build all items to export in Sheet 2 (sales & expenses within cutoffs)
+    filteredSales.forEach((s) => {
+      transactionsData.push([
+        format(new Date(s.sold_at), "dd/MM/yyyy HH:mm"),
+        s.item_name,
+        "Pemasukan",
+        s.qty,
+        currency(s.unit_price),
+        currency(s.total_price),
+        s.buyer_name ?? "-",
+        s.status === "lunas" ? "Lunas" : "Belum Bayar",
+        s.paid_at ? format(new Date(s.paid_at), "dd/MM/yyyy") : "-",
+      ]);
+    });
+    pembayaranPiutangList.forEach((s) => {
+      transactionsData.push([
+        format(new Date(s.sold_at), "dd/MM/yyyy HH:mm"),
+        s.item_name,
+        "Pembayaran Piutang Lewat Bulan",
+        s.qty,
+        currency(s.unit_price),
+        currency(s.total_price),
+        s.buyer_name ?? "-",
+        s.status === "lunas" ? "Lunas" : "Belum Bayar",
+        s.paid_at ? format(new Date(s.paid_at), "dd/MM/yyyy") : "-",
+      ]);
+    });
+    pengadaanStockList.forEach((e) => {
+      transactionsData.push([
+        format(new Date(e.bought_at), "dd/MM/yyyy HH:mm"),
+        e.description ?? "-",
+        "Pengadaan Barang",
+        "-",
+        "-",
+        currency(e.total_cost),
+        "-",
+        "-",
+        "-",
+      ]);
+    });
+    setoranBendaharaList.forEach((e) => {
+      transactionsData.push([
+        format(new Date(e.bought_at), "dd/MM/yyyy HH:mm"),
+        e.description ?? "-",
+        "Setoran",
+        "-",
+        "-",
+        currency(e.total_cost),
+        "-",
+        "-",
+        "-",
+      ]);
+    });
+
+    autoTable(doc, {
+      startY: 70,
+      head: [
+        [
+          "Tanggal",
+          "Nama Barang/Kegiatan",
+          "Kategori",
+          "Qty",
+          "Harga/Biaya",
+          "Total",
+          "Pembeli",
+          "Status",
+          "Tgl Lunas",
+        ],
+      ],
+      body: transactionsData,
+      theme: "striped",
       styles: {
         fontSize: 8.5,
         font: "helvetica",
@@ -996,18 +1544,9 @@ export default function HomePage() {
         fontStyle: "bold",
         fontSize: 9,
       },
-      alternateRowStyles: {
-        fillColor: [245, 245, 245],
-      },
-      columnStyles: {
-        0: { cellWidth: 110 },
-        2: { halign: "center", cellWidth: 40 },
-        3: { halign: "right", cellWidth: 80 },
-        4: { halign: "right", cellWidth: 80 },
-      },
     });
 
-    doc.save(`laporan-${fromDate}-to-${toDate}.pdf`);
+    doc.save(`laporan-ekonomi-${format(end, "MMM-yyyy").toLowerCase()}.pdf`);
   };
 
   const recentTransactions = useMemo(() => {
@@ -1187,6 +1726,7 @@ export default function HomePage() {
                         qty?: number;
                         buyer_name?: string | null;
                         status?: "lunas" | "belum_bayar";
+                        paid_at?: string | null;
                       },
                     ) => {
                       // Recalculate total_price if qty changed
@@ -1626,87 +2166,111 @@ function DashboardSection({
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
 
-  const metrics: DashboardMetrics = useMemo(() => {
-    const now = new Date();
-    let cutoff: Date | null = null;
-    let endCutoff: Date | null = null;
+  type DetailViewType =
+    | "transaksi"
+    | "pendapatan"
+    | "pengeluaran"
+    | "piutang"
+    | null;
+  const [detailView, setDetailView] = useState<DetailViewType>(null);
 
-    if (dashFilter === "weekly") cutoff = startOfWeek(now, { weekStartsOn: 1 });
-    else if (dashFilter === "monthly") cutoff = startOfMonth(now);
-    else if (dashFilter === "custom" && customStart) {
-      cutoff = startOfDay(new Date(customStart));
-      if (customEnd) endCutoff = endOfDay(new Date(customEnd));
-    }
+  const { metrics, filteredSales, filteredRevenueSales, filteredExpenses } =
+    useMemo(() => {
+      const now = new Date();
+      let cutoff: Date | null = null;
+      let endCutoff: Date | null = null;
 
-    const fSales = cutoff
-      ? sales.filter((s) => {
-        const d = new Date(s.sold_at);
-        if (d < cutoff!) return false;
-        if (endCutoff && d > endCutoff) return false;
-        return true;
-      })
-      : sales;
-    const fExpenses = cutoff
-      ? expenses.filter((e) => {
-        const d = new Date(e.bought_at);
-        if (d < cutoff!) return false;
-        if (endCutoff && d > endCutoff) return false;
-        return true;
-      })
-      : expenses;
+      if (dashFilter === "weekly") {
+        cutoff = startOfWeek(now, { weekStartsOn: 1 });
+      } else if (dashFilter === "monthly") {
+        cutoff = startOfMonth(now);
+      } else if (dashFilter === "custom" && customStart) {
+        cutoff = startOfDay(new Date(customStart));
+        if (customEnd) endCutoff = endOfDay(new Date(customEnd));
+      }
 
-    const totalSales = fSales.length;
-    const totalRevenue = fSales
-      .filter((s) => s.status === "lunas")
-      .reduce((acc, item) => acc + item.total_price, 0);
-    const totalExpenses = fExpenses.reduce(
-      (acc, item) => acc + item.total_cost,
-      0,
-    );
-    const piutang = fSales
-      .filter((s) => s.status === "belum_bayar")
-      .reduce((acc, item) => acc + item.total_price, 0);
-    return {
-      totalSales,
-      totalRevenue,
-      totalExpenses,
-      profit: totalRevenue - totalExpenses,
-      piutang,
-    };
-  }, [sales, expenses, dashFilter, customStart, customEnd]);
+      const fSales = cutoff
+        ? sales.filter((s) => {
+          const d = new Date(s.sold_at);
+          if (d < cutoff!) return false;
+          if (endCutoff && d > endCutoff) return false;
+          return true;
+        })
+        : sales;
+
+      const fRevenueSales = cutoff
+        ? sales.filter((s) => {
+          if (s.status !== "lunas") return false;
+          // Gunakan paid_at untuk revenue, fallback ke sold_at jika null
+          const d = new Date(s.paid_at || s.sold_at);
+          if (d < cutoff!) return false;
+          if (endCutoff && d > endCutoff) return false;
+          return true;
+        })
+        : sales.filter((s) => s.status === "lunas");
+
+      const fExpenses = cutoff
+        ? expenses.filter((e) => {
+          const d = new Date(e.bought_at);
+          if (d < cutoff!) return false;
+          if (endCutoff && d > endCutoff) return false;
+          return true;
+        })
+        : expenses;
+
+      const totalSales = fSales.length;
+      const totalRevenue = fRevenueSales.reduce(
+        (acc, item) => acc + item.total_price,
+        0,
+      );
+      const totalExpenses = fExpenses.reduce(
+        (acc, item) => acc + item.total_cost,
+        0,
+      );
+      const piutang = fSales
+        .filter((s) => s.status === "belum_bayar")
+        .reduce((acc, item) => acc + item.total_price, 0);
+
+      return {
+        metrics: {
+          totalSales,
+          totalRevenue,
+          totalExpenses,
+          profit: totalRevenue - totalExpenses,
+          piutang,
+        },
+        filteredSales: fSales,
+        filteredRevenueSales: fRevenueSales,
+        filteredExpenses: fExpenses,
+      };
+    }, [sales, expenses, dashFilter, customStart, customEnd]);
 
   return (
-    <motion.section
-      variants={staggerContainer}
-      initial="initial"
-      animate="animate"
-      className="space-y-4"
-    >
-      {/* Promo Banner */}
-      <motion.div
-        variants={fadeInUp}
-        className="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary to-accent p-4"
-      >
-        <div className="relative z-10">
-          <p className="text-xs font-medium text-primary-foreground/80">
-            Total Profit
-          </p>
-          <p className="mt-1 text-3xl font-bold text-primary-foreground">
-            {currency(metrics.profit)}
-          </p>
-          <button
-            onClick={onViewDetail}
-            className="mt-3 flex items-center gap-1 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/30"
-          >
-            Lihat Detail <ChevronRight className="h-3.5 w-3.5" />
-          </button>
+    <section className="space-y-4">
+      {/* Promo Banner - only on home */}
+      {detailView === null && (
+        <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary to-accent p-4">
+          <div className="relative z-10">
+            <p className="text-xs font-medium text-primary-foreground/80">
+              Total Profit
+            </p>
+            <p className="mt-1 text-3xl font-bold text-primary-foreground">
+              {currency(metrics.profit)}
+            </p>
+            <button
+              onClick={onViewDetail}
+              className="mt-3 flex items-center gap-1 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/30"
+            >
+              Lihat Detail <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+          <div className="absolute -bottom-6 -right-6 h-32 w-32 rounded-full bg-white/5" />
         </div>
-        <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
-        <div className="absolute -bottom-6 -right-6 h-32 w-32 rounded-full bg-white/5" />
-      </motion.div>
+      )}
 
-      {/* Time Filter Buttons */}
-      <motion.div variants={fadeInUp} className="flex gap-1.5">
+      {/* Time Filter Buttons - always visible */}
+      <div className="flex gap-1.5">
         {DASH_FILTERS.map((f) => (
           <button
             key={f.key}
@@ -1724,9 +2288,9 @@ function DashboardSection({
             {f.label}
           </button>
         ))}
-      </motion.div>
+      </div>
 
-      {/* Custom Date Range Picker */}
+      {/* Custom Date Range Picker - always visible when custom selected */}
       <AnimatePresence>
         {dashFilter === "custom" && (
           <motion.div
@@ -1780,185 +2344,238 @@ function DashboardSection({
         )}
       </AnimatePresence>
 
-      {/* Metrics Grid */}
-      <motion.div variants={fadeInUp} className="grid grid-cols-2 gap-2">
-        <MetricCard
-          label="Total Transaksi"
-          value={metrics.totalSales.toLocaleString("id-ID")}
-          variant="sales"
-          icon={ShoppingCart}
-        />
-        <MetricCard
-          label="Pendapatan"
-          value={currency(metrics.totalRevenue)}
-          variant="revenue"
-          icon={Wallet}
-        />
-        <MetricCard
-          label="Pengeluaran"
-          value={currency(metrics.totalExpenses)}
-          variant="expense"
-          icon={ArrowDownLeft}
-        />
-        <MetricCard
-          label="Piutang"
-          value={currency(metrics.piutang)}
-          variant="piutang"
-          icon={Clock}
-          highlight={metrics.piutang > 0}
-        />
-      </motion.div>
+      {/* Conditional: Home content vs Detail views */}
+      {detailView === null
+        ? (
+          <>
+            {/* Metrics Grid */}
+            <div className="grid grid-cols-2 gap-2">
+              <MetricCard
+                label="Total Transaksi"
+                value={metrics.totalSales.toLocaleString("id-ID")}
+                variant="sales"
+                icon={ShoppingCart}
+                onClick={() => setDetailView("transaksi")}
+              />
+              <MetricCard
+                label="Pendapatan"
+                value={currency(metrics.totalRevenue)}
+                variant="revenue"
+                icon={Wallet}
+                onClick={() => setDetailView("pendapatan")}
+              />
+              <MetricCard
+                label="Pengeluaran"
+                value={currency(metrics.totalExpenses)}
+                variant="expense"
+                icon={ArrowDownLeft}
+                onClick={() => setDetailView("pengeluaran")}
+              />
+              <MetricCard
+                label="Piutang"
+                value={currency(metrics.piutang)}
+                variant="piutang"
+                icon={Clock}
+                highlight={metrics.piutang > 0}
+                onClick={() => setDetailView("piutang")}
+              />
+            </div>
 
-      {/* Sales Chart */}
-      <motion.div variants={fadeInUp} className="card p-4">
-        <p className="mb-3 text-sm font-semibold text-foreground">
-          Grafik Penjualan 30 Hari
-        </p>
-        <div className="h-44">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#1a4d4d" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#1a4d4d" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="#e5e5e5"
-                vertical={false}
-              />
-              <XAxis
-                dataKey="day"
-                tick={{ fill: "#6b7280", fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tickFormatter={(value) => `${Math.round(value / 1000)}k`}
-                tick={{ fill: "#6b7280", fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-                width={35}
-              />
-              <Tooltip
-                formatter={(value: number | undefined) => currency(value ?? 0)}
-                contentStyle={{
-                  background: "#fff",
-                  border: "none",
-                  borderRadius: "12px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                  fontSize: "12px",
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="amount"
-                stroke="#1a4d4d"
-                fill="url(#salesGradient)"
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </motion.div>
-
-      {/* Recent Transactions */}
-      <motion.div variants={fadeInUp} className="card p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <History className="h-4 w-4 text-primary" />
-          <p className="text-sm font-semibold text-foreground">
-            Riwayat Transaksi Terakhir
-          </p>
-        </div>
-        {recentTransactions.length === 0
-          ? (
-            <p className="text-sm text-muted-foreground">
-              Belum ada transaksi.
-            </p>
-          )
-          : (
-            <ul className="space-y-3">
-              {recentTransactions.map((transaction) => {
-                const isSale = transaction.type === "sale";
-                return (
-                  <li
-                    key={`${transaction.type}-${transaction.id}`}
-                    className="flex items-start justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                          isSale
-                            ? "bg-secondary text-primary"
-                            : "bg-red-100 text-red-600"
-                        }`}
+            {/* Sales Chart */}
+            <div className="card p-4">
+              <p className="mb-3 text-sm font-semibold text-foreground">
+                Grafik Penjualan 30 Hari
+              </p>
+              <div className="h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient
+                        id="salesGradient"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
                       >
-                        {isSale
-                          ? <ShoppingBag className="h-4 w-4" />
-                          : <LogOut className="h-4 w-4" />}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {isSale
-                            ? transaction.item_name
-                            : transaction.description}
-                        </p>
-                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                          <span>
-                            {format(
-                              new Date(
+                        <stop
+                          offset="5%"
+                          stopColor="#1a4d4d"
+                          stopOpacity={0.4}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="#1a4d4d"
+                          stopOpacity={0.02}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#e5e5e5"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="day"
+                      tick={{ fill: "#6b7280", fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tickFormatter={(value) => `${Math.round(value / 1000)}k`}
+                      tick={{ fill: "#6b7280", fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={35}
+                    />
+                    <Tooltip
+                      formatter={(value: number | undefined) =>
+                        currency(value ?? 0)}
+                      contentStyle={{
+                        background: "#fff",
+                        border: "none",
+                        borderRadius: "12px",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                        fontSize: "12px",
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="amount"
+                      stroke="#1a4d4d"
+                      fill="url(#salesGradient)"
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Recent Transactions */}
+            <div className="card p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <History className="h-4 w-4 text-primary" />
+                <p className="text-sm font-semibold text-foreground">
+                  Riwayat Transaksi Terakhir
+                </p>
+              </div>
+              {recentTransactions.length === 0
+                ? (
+                  <p className="text-sm text-muted-foreground">
+                    Belum ada transaksi.
+                  </p>
+                )
+                : (
+                  <ul className="space-y-3">
+                    {recentTransactions.map((transaction) => {
+                      const isSale = transaction.type === "sale";
+                      return (
+                        <li
+                          key={`${transaction.type}-${transaction.id}`}
+                          className="flex items-start justify-between"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`flex h-8 w-8 items-center justify-center rounded-full ${
                                 isSale
-                                  ? transaction.sold_at
-                                  : transaction.bought_at,
-                              ),
-                              "dd MMM, HH:mm",
+                                  ? "bg-secondary text-primary"
+                                  : "bg-red-100 text-red-600"
+                              }`}
+                            >
+                              {isSale
+                                ? <ShoppingBag className="h-4 w-4" />
+                                : <LogOut className="h-4 w-4" />}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {isSale
+                                  ? transaction.item_name
+                                  : transaction.description}
+                              </p>
+                              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                                <span>
+                                  {format(
+                                    new Date(
+                                      isSale
+                                        ? transaction.sold_at
+                                        : transaction.bought_at,
+                                    ),
+                                    "dd MMM, HH:mm",
+                                  )}
+                                </span>
+                                {isSale && transaction.buyer_name && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{transaction.buyer_name}</span>
+                                  </>
+                                )}
+                                {isSale && (
+                                  <>
+                                    <span>•</span>
+                                    <span
+                                      className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${
+                                        transaction.status === "lunas"
+                                          ? "bg-emerald-100 text-emerald-700"
+                                          : "bg-orange-100 text-orange-700"
+                                      }`}
+                                    >
+                                      {transaction.status === "lunas"
+                                        ? "Lunas"
+                                        : "Belum Bayar"}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            className={`text-sm font-semibold ${
+                              isSale ? "text-foreground" : "text-red-600"
+                            }`}
+                          >
+                            {isSale ? "+ " : "- "}
+                            {currency(
+                              isSale
+                                ? transaction.total_price
+                                : transaction.total_cost,
                             )}
                           </span>
-                          {isSale && transaction.buyer_name && (
-                            <>
-                              <span>•</span>
-                              <span>{transaction.buyer_name}</span>
-                            </>
-                          )}
-                          {isSale && (
-                            <>
-                              <span>•</span>
-                              <span
-                                className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${
-                                  transaction.status === "lunas"
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : "bg-orange-100 text-orange-700"
-                                }`}
-                              >
-                                {transaction.status === "lunas"
-                                  ? "Lunas"
-                                  : "Belum Bayar"}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <span
-                      className={`text-sm font-semibold ${
-                        isSale ? "text-foreground" : "text-red-600"
-                      }`}
-                    >
-                      {isSale ? "+ " : "- "}
-                      {currency(
-                        isSale
-                          ? transaction.total_price
-                          : transaction.total_cost,
-                      )}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-      </motion.div>
-    </motion.section>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+            </div>
+          </>
+        )
+        : (
+          <>
+            {detailView === "transaksi" && (
+              <TransaksiDetailView
+                sales={filteredSales}
+                onBack={() => setDetailView(null)}
+              />
+            )}
+            {detailView === "pendapatan" && (
+              <PendapatanDetailView
+                sales={filteredRevenueSales}
+                onBack={() => setDetailView(null)}
+              />
+            )}
+            {detailView === "pengeluaran" && (
+              <PengeluaranDetailView
+                expenses={filteredExpenses}
+                onBack={() => setDetailView(null)}
+              />
+            )}
+            {detailView === "piutang" && (
+              <PiutangDetailView
+                sales={filteredSales}
+                onBack={() => setDetailView(null)}
+              />
+            )}
+          </>
+        )}
+    </section>
   );
 }
 
@@ -2679,6 +3296,7 @@ function IncomeSection({
       qty?: number;
       buyer_name?: string | null;
       status?: "lunas" | "belum_bayar";
+      paid_at?: string | null;
     },
   ) => Promise<void>;
   onDeleteSale: (id: number) => Promise<void>;
@@ -2701,6 +3319,7 @@ function IncomeSection({
   const [editStatus, setEditStatus] = useState<"lunas" | "belum_bayar">(
     "lunas",
   );
+  const [editPaidAt, setEditPaidAt] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteSale, setConfirmDeleteSale] = useState(false);
@@ -2726,6 +3345,7 @@ function IncomeSection({
         unitPrice: s.unit_price,
         detail: s.buyer_name,
         status: s.status,
+        paidAt: s.paid_at,
         stockItemId: s.stock_item_id,
       })),
       ...expenses.map((e) => ({
@@ -2789,6 +3409,13 @@ function IncomeSection({
     setEditQty(selectedSale.qty);
     setEditBuyer(selectedSale.buyer_name ?? "");
     setEditStatus(selectedSale.status);
+    const pd = selectedSale.paid_at
+      ? new Date(selectedSale.paid_at)
+      : new Date();
+    setEditPaidAt(
+      new Date(pd.getTime() - pd.getTimezoneOffset() * 60000).toISOString()
+        .slice(0, 10),
+    );
     setIsEditing(true);
   };
 
@@ -2799,6 +3426,9 @@ function IncomeSection({
       qty: editQty,
       buyer_name: editBuyer.trim() || null,
       status: editStatus,
+      paid_at: editStatus === "lunas"
+        ? new Date(editPaidAt).toISOString()
+        : null,
     });
     setSaving(false);
     setSelectedSale(null);
@@ -3147,17 +3777,28 @@ function IncomeSection({
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Status</span>
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
-                            selectedSale.status === "lunas"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-orange-100 text-orange-700"
-                          }`}
-                        >
-                          {selectedSale.status === "lunas"
-                            ? "Lunas"
-                            : "Belum Bayar"}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                              selectedSale.status === "lunas"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-orange-100 text-orange-700"
+                            }`}
+                          >
+                            {selectedSale.status === "lunas"
+                              ? "Lunas"
+                              : "Belum Bayar"}
+                          </span>
+                          {selectedSale.status === "lunas" &&
+                            selectedSale.paid_at && (
+                            <span className="text-[10px] text-muted-foreground">
+                              (Lunas: {format(
+                                new Date(selectedSale.paid_at),
+                                "dd MMM yyyy",
+                              )})
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
@@ -3208,29 +3849,44 @@ function IncomeSection({
                         />
                       </InputWrap>
                       <InputWrap label="Status Pembayaran">
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setEditStatus("lunas")}
-                            className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
-                              editStatus === "lunas"
-                                ? "bg-emerald-600 text-white"
-                                : "bg-muted text-muted-foreground hover:bg-muted/80"
-                            }`}
-                          >
-                            Lunas
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditStatus("belum_bayar")}
-                            className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
-                              editStatus === "belum_bayar"
-                                ? "bg-orange-500 text-white"
-                                : "bg-muted text-muted-foreground hover:bg-muted/80"
-                            }`}
-                          >
-                            Belum Bayar
-                          </button>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditStatus("lunas")}
+                              className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+                                editStatus === "lunas"
+                                  ? "bg-emerald-600 text-white"
+                                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+                              }`}
+                            >
+                              Lunas
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditStatus("belum_bayar")}
+                              className={`flex-1 rounded-lg py-2 text-xs font-semibold transition ${
+                                editStatus === "belum_bayar"
+                                  ? "bg-orange-500 text-white"
+                                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+                              }`}
+                            >
+                              Belum Bayar
+                            </button>
+                          </div>
+                          {editStatus === "lunas" && (
+                            <div className="mt-1">
+                              <label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+                                Tanggal Pelunasan
+                              </label>
+                              <input
+                                type="date"
+                                value={editPaidAt}
+                                onChange={(e) => setEditPaidAt(e.target.value)}
+                                className="input-base w-full py-2 text-xs"
+                              />
+                            </div>
+                          )}
                         </div>
                       </InputWrap>
                     </div>
@@ -3751,12 +4407,14 @@ function MetricCard({
   highlight,
   variant = "default",
   icon: Icon,
+  onClick,
 }: {
   label: string;
   value: string;
   highlight?: boolean;
   variant?: "sales" | "revenue" | "expense" | "piutang" | "default";
   icon?: React.ElementType;
+  onClick?: () => void;
 }) {
   const gradients: Record<string, string> = {
     sales: "from-teal-500 to-teal-700",
@@ -3768,9 +4426,12 @@ function MetricCard({
 
   return (
     <article
+      onClick={onClick}
       className={`relative overflow-hidden rounded-xl bg-gradient-to-br ${
         gradients[variant]
-      } p-3.5 shadow-lg transition-transform hover:scale-[1.02]`}
+      } p-3.5 shadow-lg transition-transform hover:scale-[1.02] ${
+        onClick ? "cursor-pointer" : ""
+      }`}
     >
       {/* Decorative circles */}
       <div className="absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
@@ -3805,5 +4466,325 @@ function InputWrap(
       </span>
       {children}
     </label>
+  );
+}
+
+// Detail View Components
+function TransaksiDetailView(
+  { sales, onBack }: { sales: Sale[]; onBack: () => void },
+) {
+  const totalQty = sales.reduce((acc, s) => acc + s.qty, 0);
+
+  // Group by item name
+  const grouped = useMemo(() => {
+    const map = new Map<string, { qty: number; total: number }>();
+    sales.forEach((s) => {
+      const current = map.get(s.item_name) || { qty: 0, total: 0 };
+      map.set(s.item_name, {
+        qty: current.qty + s.qty,
+        total: current.total + s.total_price,
+      });
+    });
+    return Array.from(map.entries()).sort((a, b) => b[1].qty - a[1].qty);
+  }, [sales]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="space-y-4"
+    >
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onBack}
+          className="rounded-full p-1.5 hover:bg-gray-100 transition"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-700" />
+        </button>
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            Total Transaksi ({sales.length})
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {totalQty.toLocaleString("id-ID")} item terjual
+          </p>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">
+          Item Terlaris
+        </h3>
+        <ul className="space-y-3">
+          {grouped.length === 0
+            ? (
+              <p className="text-sm text-muted-foreground">
+                Tidak ada transaksi.
+              </p>
+            )
+            : (
+              grouped.map(([name, data]) => (
+                <li
+                  key={name}
+                  className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0 last:pb-0"
+                >
+                  <span className="text-sm font-medium">{name}</span>
+                  <div className="text-right">
+                    <span className="text-sm font-bold block">
+                      {data.qty} pcs
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {currency(data.total)}
+                    </span>
+                  </div>
+                </li>
+              ))
+            )}
+        </ul>
+      </div>
+
+      <div className="card p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">
+          Seluruh Transaksi
+        </h3>
+        <ul className="space-y-3">
+          {sales.map((sale) => (
+            <li
+              key={`trans-${sale.id}`}
+              className="flex flex-col gap-1 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+            >
+              <div className="flex justify-between">
+                <span className="text-sm font-semibold">{sale.item_name}</span>
+                <span className="text-sm font-bold text-teal-600">
+                  {sale.qty} pcs
+                </span>
+              </div>
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>{format(new Date(sale.sold_at), "dd MMM, HH:mm")}</span>
+                <span>{currency(sale.total_price)}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </motion.div>
+  );
+}
+
+function PendapatanDetailView(
+  { sales, onBack }: { sales: Sale[]; onBack: () => void },
+) {
+  const lunasSales = sales.filter((s) => s.status === "lunas");
+  const totalRevenue = lunasSales.reduce((acc, s) => acc + s.total_price, 0);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="space-y-4"
+    >
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onBack}
+          className="rounded-full p-1.5 hover:bg-gray-100 transition"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-700" />
+        </button>
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            Detail Pendapatan
+          </h2>
+          <p className="text-xs text-emerald-600 font-medium pb-1">
+            Total Kas Lunas: {currency(totalRevenue)}
+          </p>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">
+          Penjualan Lunas ({lunasSales.length})
+        </h3>
+        <ul className="space-y-3">
+          {lunasSales.length === 0
+            ? (
+              <p className="text-sm text-muted-foreground">
+                Tidak ada penjualan lunas.
+              </p>
+            )
+            : (
+              lunasSales.map((sale) => (
+                <li
+                  key={`rev-${sale.id}`}
+                  className="flex flex-col gap-1 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+                >
+                  <div className="flex justify-between items-start">
+                    <span className="text-sm font-semibold">
+                      {sale.buyer_name || "Tanpa Nama"}
+                    </span>
+                    <span className="text-sm font-bold text-emerald-600">
+                      +{currency(sale.total_price)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>{sale.item_name} ({sale.qty} pcs)</span>
+                    <span>
+                      {format(new Date(sale.sold_at), "dd MMM, HH:mm")}
+                    </span>
+                  </div>
+                </li>
+              ))
+            )}
+        </ul>
+      </div>
+    </motion.div>
+  );
+}
+
+function PengeluaranDetailView(
+  { expenses, onBack }: { expenses: Expense[]; onBack: () => void },
+) {
+  const totalExpense = expenses.reduce((acc, e) => acc + e.total_cost, 0);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="space-y-4"
+    >
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onBack}
+          className="rounded-full p-1.5 hover:bg-gray-100 transition"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-700" />
+        </button>
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            Detail Pengeluaran
+          </h2>
+          <p className="text-xs text-rose-600 font-medium pb-1">
+            Total Kas Keluar: {currency(totalExpense)}
+          </p>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">
+          Riwayat Pengeluaran ({expenses.length})
+        </h3>
+        <ul className="space-y-3">
+          {expenses.length === 0
+            ? (
+              <p className="text-sm text-muted-foreground">
+                Tidak ada pengeluaran.
+              </p>
+            )
+            : (
+              expenses.map((expense) => (
+                <li
+                  key={`exp-${expense.id}`}
+                  className="flex flex-col gap-1 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+                >
+                  <div className="flex justify-between items-start">
+                    <span className="text-sm font-medium pr-2 max-w-[70%] leading-tight text-foreground">
+                      {expense.description}
+                    </span>
+                    <span className="text-sm font-bold text-rose-600 whitespace-nowrap">
+                      -{currency(expense.total_cost)}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    <span>
+                      {format(new Date(expense.bought_at), "dd MMM, HH:mm")}
+                    </span>
+                  </div>
+                </li>
+              ))
+            )}
+        </ul>
+      </div>
+    </motion.div>
+  );
+}
+
+function PiutangDetailView(
+  { sales, onBack }: { sales: Sale[]; onBack: () => void },
+) {
+  const piutangSales = sales.filter((s) => s.status === "belum_bayar");
+  const totalPiutang = piutangSales.reduce((acc, s) => acc + s.total_price, 0);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="space-y-4"
+    >
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onBack}
+          className="rounded-full p-1.5 hover:bg-gray-100 transition"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-700" />
+        </button>
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            Detail Piutang
+          </h2>
+          <p className="text-xs text-amber-600 font-medium pb-1">
+            Total Belum Bayar: {currency(totalPiutang)}
+          </p>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">
+          Penjualan Belum Lunas ({piutangSales.length})
+        </h3>
+        <ul className="space-y-3">
+          {piutangSales.length === 0
+            ? (
+              <p className="text-sm text-muted-foreground">
+                Tidak ada piutang tertagih.
+              </p>
+            )
+            : (
+              piutangSales.map((sale) => (
+                <li
+                  key={`piutang-${sale.id}`}
+                  className="flex flex-col gap-1 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold">
+                        {sale.buyer_name || "Tanpa Nama"}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {sale.item_name} ({sale.qty} pcs)
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-sm font-bold text-amber-600">
+                        {currency(sale.total_price)}
+                      </span>
+                      <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[8px] font-bold uppercase text-orange-700 mt-1">
+                        Belum Bayar
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    <span>
+                      {format(new Date(sale.sold_at), "dd MMM, HH:mm")}
+                    </span>
+                  </div>
+                </li>
+              ))
+            )}
+        </ul>
+      </div>
+    </motion.div>
   );
 }

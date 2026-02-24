@@ -12,6 +12,8 @@
     "@supabase/supabase-js": "^2.95.3",
     "cropperjs": "1.6.2",
     "date-fns": "^4.1.0",
+    "exceljs": "^4.4.0",
+    "file-saver": "^2.0.5",
     "framer-motion": "^12.33.0",
     "jspdf": "^4.1.0",
     "jspdf-autotable": "^5.0.7",
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/file-saver": "^2.0.7",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
